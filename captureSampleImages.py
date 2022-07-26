@@ -1,20 +1,20 @@
 from cameraClass import Camera
+from MapCoords import MapCoords
 import cv2
 import os
+import pickle
+
+with open('cam1Params', 'rb') as f:
+    cam1_params = pickle.load(f)
+with open('cam2Params', 'rb') as f:
+    cam2_params = pickle.load(f)
+
+cam2_params = cam1_params # remove this!!!
+camera = Camera([cam1_params,cam2_params])
 
 counter = 0
-camera = Camera()
 
-parent_dir = "/home/pi/piObjLoc/"
-#dir_name = "chessboard_images"
-dir_name = "object_images"
-full_path = parent_dir+dir_name
-
-# make directory. Delete and recreate if already exists
-try:
-    os.mkdir(full_path)
-except OSError as error:
-    print("directory already exists")
+full_path = "/home/pi/piObjLocSync/object_images/"
 
 os.chdir(full_path)
 
@@ -23,7 +23,7 @@ while True:
     if inp == "s":
         break
     im1, im2 = camera.take_pic()
-    cv2.imwrite("cam1_img_"+str(counter)+".jpg", im1)
-    cv2.imwrite("cam2_img_"+str(counter)+".jpg", im2)
+    cv2.imwrite("cam1/img_"+str(counter)+".jpg", im1)
+    cv2.imwrite("cam2/img_"+str(counter)+".jpg", im2)
     print(str(counter) + " images captured \n")
     counter+=1

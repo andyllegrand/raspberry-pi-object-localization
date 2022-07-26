@@ -9,11 +9,11 @@ from MapCoords import MapCoords
 from objectDetector import objectDetector
 
 # expected pixel values for 4 inner corners of fiducial squares.
-expectedLeftCornersCam1 = []
-expectedLeftCornersCam2 = []
+expectedLeftCornersCam1 = [[1000, 400], [2900,400], [830,2200], [3100,2200]]
+expectedLeftCornersCam2 = [[800, 525], [0,0], [0,0], [0,0]]
 
 # expected pixel values for 4 outer corners of fiducial squares.
-expectedRightCornersCam1 = []
+expectedRightCornersCam1 = [[1300, 700], [3200, 700], [1130, 2500], [3400, 2500]]
 expectedRightCornersCam2 = []
 
 # position of ends of camera lenses.
@@ -57,22 +57,22 @@ class objectLocalizer:
         self.camera = Camera([cam1_params, cam2_params])
 
         # load last used pictures
-        self.el1 = cv2.imread('emptyLev1')
-        self.el2 = cv2.imread('emptyLev2')
+        self.el1 = cv2.imread('/piObjLocSync/emptyLev1.jpg')
+        self.el2 = cv2.imread('/piObjLocSync/emptyLev2.jpg')
 
         # create edgeDetectors
-        self.edgeDetector1 = MapCoords(el1, expectedLeftCornersCam1, expectedLeftCornersCam2, square_distance)
-        self.edgeDetector2 = MapCoords(el2, expectedLeftCornersCam2, expectedLeftCornersCam2, square_distance)
+        self.edgeDetector1 = MapCoords(self.el1, expectedLeftCornersCam1, expectedLeftCornersCam2, square_distance)
+        self.edgeDetector2 = MapCoords(self.el2, expectedLeftCornersCam2, expectedLeftCornersCam2, square_distance)
 
         # initialize object detector
         self.objectDetector = objectDetector()
 
     def recalibrate(self):
         # get empty images
-        el1, el2 = self.camera.takePic()
+        el1, el2 = self.camera.take_pic()
 
-        cv2.imwrite('emptyLev1', el1)
-        cv2.imwrite('emptyLev2', el2)
+        cv2.imwrite('/piObjLocSync/emptyLev1.jpg', el1)
+        cv2.imwrite('/piObjLocSync/emptyLev2.jpg', el2)
 
         # create new edgeDetectors
         self.edgeDetector1 = MapCoords(el1, expectedLeftCornersCam1, expectedLeftCornersCam2, square_distance)
