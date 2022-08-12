@@ -8,37 +8,53 @@ class MapCoords:
     RED_THRESH = 100
     GREEN_BLUE_THRESH = 50
 
-    output_dir = "/Users/andylegrand/PycharmProjects/localization_image_testing/output"
-
-    def __init__(self, image, expected_positions_left, expected_positions_right, cm_distance):
+    def __init__(self, image, scale, expected_positions_left, expected_positions_right, cm_distance, outputDir):
         self.image = image
         self.cm_distance = cm_distance
+        self.output_dir = outputDir
         inner_corners = []
         l, w, c = np.shape(image)
-        center = [int(l/2), int(w/2)]
+        #center = [int(l/2), int(w/2)]
+        center = [556, 419] # TODO this really should not be hardcoded
 
         # crop each fiducial, identify all 4 corners, then save corner closest to center of image
         for i in range(4):
+            print("here")
             cropped_fiducial = MapCoords.crop(image, expected_positions_left[i], expected_positions_right[i])
             mask = MapCoords.preprocess_image(cropped_fiducial)
             edges = MapCoords.find_outline(mask)
-            lines = self.draw_vertical_horizontal_lines(edges, original_image=cropped_fiducial, outputPath=MapCoords.output_dir+"/fiducialHoughLines"+str(i)+".jpg")
-            corners = MapCoords.find_and_group_intersections(lines)
+
+            cv2.imshow("cf", cropped_fiducial)
+            cv2.imshow("mask", mask)
+            cv2.imshow("edges", edges)
+            cv2.waitKey(500)
+
+            # try different houghline threshold values until 4 corners are found
+            thresh = 20
+            while True:
+                assert thresh > 0, "no valid thresh setting found"
+                print(thresh)
+                lines = MapCoords.draw_vertical_horizontal_lines(edges, thresh, original_image=cropped_fiducial, outputPath=self.output_dir+"/fiducialHoughLines"+str(i)+ "thresh" + str(thresh)+".jpg")
+                corners = MapCoords.find_and_group_intersections(lines)
+                if len(corners) == 4:
+                    break
+                thresh-=1
+
+            MapCoords.plot_corners(cropped_fiducial, corners, self.output_dir + "/allCorners" + str(i) + ".jpg")
             corner_real_coords = []
             for corner in corners: corner_real_coords.append([corner[0] + expected_positions_left[i][0], corner[1] + expected_positions_left[i][1]])
-            assert len(corners) == 4
-            # MapCoords.plot_corners(cropped_fiducial, corners, MapCoords.output_dir + "/cornersfeducial" + str(i) + ".jpg")
+            # MapCoords.plot_corners(cropped_fiducial, corners, self.output_dir + "/cornersfeducial" + str(i) + ".jpg")
             middle_corner = MapCoords.find_closest_corner(corner_real_coords, center)
             inner_corners.append(middle_corner)
 
         # print images
-        MapCoords.plot_corners(image, inner_corners, MapCoords.output_dir+"/innerCorners.jpg")
+        MapCoords.plot_corners(image, inner_corners, self.output_dir+"/innerCorners.jpg")
         # find homography
         self.position_matrix = MapCoords.fill_position_matrix_tilted(image, inner_corners, cm_distance)
         return
 
     def get_real_coord(self, rx, ry):
-        return self.position_matrix[rx][ry]
+        return self.position_matrix[rx][ry] - np.array([30,30]) # subtract 30 to set 0,0 to center
 
     def get_image(self):
         return self.image
@@ -103,11 +119,14 @@ class MapCoords:
 
         return edges
 
+    # have to change thresh for each resolution scalar
     @staticmethod
-    def draw_vertical_horizontal_lines(edge_image, k=2, original_image = None, outputPath = None, **kwargs):
-        rho, theta, thresh = 1, np.pi / 180, 50
+    def draw_vertical_horizontal_lines(edge_image, thresh, k=2, original_image = None, outputPath = None, **kwargs):
+        rho, theta = 1, np.pi / 180
         lines = cv2.HoughLines(edge_image, rho, theta, thresh)
-
+        if lines is None:
+            print("no lines")
+            return None
         if original_image is not None:
             img = original_image.copy()
             for line in lines:
@@ -150,6 +169,11 @@ class MapCoords:
     @staticmethod
     def find_and_group_intersections(lines):
         intersections = []
+
+        # make sure that there are lines to work with
+        if lines is None:
+            return intersections
+
         # Compare lines in each group
         for i, group in enumerate(lines[:-1]):
             for next_group in lines[i + 1:]:
@@ -232,6 +256,14 @@ class MapCoords:
         return closest_point
 
     @staticmethod
+    def average_points(points):
+        total = [0,0]
+        for point in points:
+            total[0] += point[0]
+            total[1] += point[1]
+        return[total[0] / len(points), total[1] / len(points)]
+
+    @staticmethod
     def eval_linear_equation(m, x, b):
         return m*x+b
 
@@ -259,6 +291,9 @@ class MapCoords:
         bottom_left = reference_points[2]
         bottom_right = reference_points[3]
 
+        # offset so set middle of area to (0,0)
+        offset = distance / 2
+
         # calculate side equations (start at top bc y grows down)
         left_m = MapCoords.calc_slope_y(top_left, bottom_left)
         left_b = top_left[0]
@@ -276,12 +311,12 @@ class MapCoords:
             right_point = [MapCoords.eval_linear_equation(right_m, yc, right_b), yc + top_right[1]]
 
             real_y = distance * MapCoords.calc_distance_between_line_and_point(left_point, top_m, -1,
-                top_left[1]) / vertical_distance
+                top_left[1]) / vertical_distance - offset
 
             lr_distance = MapCoords.calc_distance(left_point, right_point)
             for xc in range(int(right_point[0]-left_point[0]+1)):
                 pixel = [int(left_point[0] + xc), int(MapCoords.eval_linear_equation(top_m, xc, left_point[1]))]
-                real_x = distance * MapCoords.calc_distance(pixel, left_point) / lr_distance
+                real_x = distance * MapCoords.calc_distance(pixel, left_point) / lr_distance - offset
                 position_matrix[pixel[0], pixel[1]] = [real_x, real_y]
                 # print(str(pixel) + ' ' + str(position_matrix[pixel[0], pixel[1]]))
         return position_matrix
@@ -350,12 +385,12 @@ class visual_Test:
 
 if __name__ == '__main__':
     # Read in the image
-    img = cv2.imread('/Users/andylegrand/PycharmProjects/localization_image_testing/levitator_sample_images/object_images/undistorted2.jpg')
+    img = cv2.imread("/home/pi/piObjLocSync/emptyLev1.jpg")
     #exLeft = [[400, 1000],[400, 2900],[2200, 830],[2200,3100]]
     #exRight = [[700, 1300],[700,3200],[2500,1130],[2500,3400]]
 
     exLeft = [[1000, 400], [2900,400], [830,2200], [3100,2200]]
     exRight = [[1300, 700], [3200, 700], [1130, 2500], [3400, 2500]]
-    ed = MapCoords(img, exLeft, exRight, 60)
-    visual_Test(ed)
+    ed = MapCoords(img, exLeft, exRight, 60, "/home/pi/piObjLocSync/output")
+    #visual_Test(ed)
     #ed.reconstruct_image()

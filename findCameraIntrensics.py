@@ -4,7 +4,7 @@ import numpy as np
 import cv2 as cv
 import glob
 import pickle
-os.chdir("/Users/andylegrand/PycharmProjects/localization_image_testing/camera1")
+os.chdir("/Users/andylegrand/PycharmProjects/objloc_ras_pi/chessboard_images/cam1")
 # termination criteria
 criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(7,7,0)

@@ -4,17 +4,22 @@ import cv2
 import os
 import pickle
 
+cam1_params, cam2_params = None, None
+
+# uncomment to capture undistorted images
+'''
 with open('cam1Params', 'rb') as f:
     cam1_params = pickle.load(f)
 with open('cam2Params', 'rb') as f:
     cam2_params = pickle.load(f)
+'''
 
-cam2_params = cam1_params # remove this!!!
-camera = Camera([cam1_params,cam2_params])
+camera = Camera([cam1_params, cam2_params], 1)
 
 counter = 0
 
-full_path = "/home/pi/piObjLocSync/object_images/"
+full_path = "/home/pi/piObjLocSync/chessboard_images/"
+#full_path = "/home/pi/piObjLocSync/object_images/"
 
 os.chdir(full_path)
 
