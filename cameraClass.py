@@ -1,7 +1,5 @@
 from picamera2 import Picamera2
 import cv2
-import numpy as np
-import os,sys
 
 full_res = (4056, 3040)
 
@@ -56,6 +54,7 @@ class Camera:
         im2 = cv2.resize(im2, self.resolution)
         return im1, im2
 
+# test script. takes 2 undistorted pictires and saves them
 if __name__ == '__main__':
     import pickle
     with open('cam1Params', 'rb') as f:
@@ -70,6 +69,6 @@ if __name__ == '__main__':
 
     im1, im2 = camera.take_pic()
     print(str(im1.shape))
-    cv2.imwrite("/home/pi/piObjLocSync/output/test1.jpg", im1)
-    cv2.imwrite("/home/pi/piObjLocSync/output/test2.jpg", im2)
+    cv2.imwrite("/home/pi/piObjLocSync/output/object1.jpg", im1)
+    cv2.imwrite("/home/pi/piObjLocSync/output/object2.jpg", im2)
     print("done")

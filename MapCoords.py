@@ -291,9 +291,6 @@ class MapCoords:
         bottom_left = reference_points[2]
         bottom_right = reference_points[3]
 
-        # offset so set middle of area to (0,0)
-        offset = distance / 2
-
         # calculate side equations (start at top bc y grows down)
         left_m = MapCoords.calc_slope_y(top_left, bottom_left)
         left_b = top_left[0]
@@ -311,18 +308,18 @@ class MapCoords:
             right_point = [MapCoords.eval_linear_equation(right_m, yc, right_b), yc + top_right[1]]
 
             real_y = distance * MapCoords.calc_distance_between_line_and_point(left_point, top_m, -1,
-                top_left[1]) / vertical_distance - offset
+                top_left[1]) / vertical_distance
 
             lr_distance = MapCoords.calc_distance(left_point, right_point)
             for xc in range(int(right_point[0]-left_point[0]+1)):
                 pixel = [int(left_point[0] + xc), int(MapCoords.eval_linear_equation(top_m, xc, left_point[1]))]
-                real_x = distance * MapCoords.calc_distance(pixel, left_point) / lr_distance - offset
+                real_x = distance * MapCoords.calc_distance(pixel, left_point) / lr_distance
                 position_matrix[pixel[0], pixel[1]] = [real_x, real_y]
                 # print(str(pixel) + ' ' + str(position_matrix[pixel[0], pixel[1]]))
         return position_matrix
 
+# testing class. Shows image then user can click on any pixel to get real world coordinates
 class visual_Test:
-
     def __init__(self, ed):
         # reading the image
         self.img = ed.get_image()
@@ -384,13 +381,9 @@ class visual_Test:
             cv2.imshow('image', self.img)
 
 if __name__ == '__main__':
-    # Read in the image
-    img = cv2.imread("/home/pi/piObjLocSync/emptyLev1.jpg")
-    #exLeft = [[400, 1000],[400, 2900],[2200, 830],[2200,3100]]
-    #exRight = [[700, 1300],[700,3200],[2500,1130],[2500,3400]]
+    import pickle
 
-    exLeft = [[1000, 400], [2900,400], [830,2200], [3100,2200]]
-    exRight = [[1300, 700], [3200, 700], [1130, 2500], [3400, 2500]]
-    ed = MapCoords(img, exLeft, exRight, 60, "/home/pi/piObjLocSync/output")
-    #visual_Test(ed)
-    #ed.reconstruct_image()
+    with open('edgeDetector1', 'rb') as f:
+        edgeDetector1 = pickle.load(f)
+
+    visual_Test(edgeDetector1)

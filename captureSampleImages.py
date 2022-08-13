@@ -1,3 +1,5 @@
+# script which captures multiple images and saves to file
+
 from cameraClass import Camera
 from MapCoords import MapCoords
 import cv2
