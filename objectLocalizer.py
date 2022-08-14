@@ -32,14 +32,14 @@ expectedRightCornersCam1 = (expectedRightCornersCam1/res_scaler).astype(int)
 expectedRightCornersCam2 = (expectedRightCornersCam2/res_scaler).astype(int)
 
 # position of ends of camera lenses relative to origin (mm).
-cam1Position = [0, 48, 132]
-cam2Position = [0, -48,132]
+cam1Position = [0, 48, 142]
+cam2Position = [0, -48, 142]
 
 # distance between fiducials in mm
 square_distance = 60
 
 # distance face plate is above z = 0
-facePlateHeight = 40
+facePlateHeight = 42
 
 def print_debug(message):
     if DEBUG:
@@ -146,5 +146,5 @@ class objectLocalizer:
         return closest_point_between_skew_lines(XA0, XA1, XB0, XB1)
 
 if __name__ == '__main__':
-    ol = objectLocalizer(recalibrate=False)
+    ol = objectLocalizer(recalibrate=True)
     print(ol.localize_object())

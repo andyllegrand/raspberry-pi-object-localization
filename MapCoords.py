@@ -8,7 +8,12 @@ class MapCoords:
     RED_THRESH = 100
     GREEN_BLUE_THRESH = 50
 
-    def __init__(self, image, scale, expected_positions_left, expected_positions_right, cm_distance, outputDir):
+    def print_debug(self, message):
+        if self.debug:
+            print(message)
+
+    def __init__(self, image, scale, expected_positions_left, expected_positions_right, cm_distance, outputDir, debug = True):
+        self.debug = debug
         self.image = image
         self.cm_distance = cm_distance
         self.output_dir = outputDir
@@ -19,26 +24,26 @@ class MapCoords:
 
         # crop each fiducial, identify all 4 corners, then save corner closest to center of image
         for i in range(4):
-            print("here")
+            self.print_debug("processing fiducial: " + str(i) + "...")
             cropped_fiducial = MapCoords.crop(image, expected_positions_left[i], expected_positions_right[i])
             mask = MapCoords.preprocess_image(cropped_fiducial)
             edges = MapCoords.find_outline(mask)
 
-            cv2.imshow("cf", cropped_fiducial)
-            cv2.imshow("mask", mask)
-            cv2.imshow("edges", edges)
-            cv2.waitKey(500)
+            if self.debug:
+                cv2.imshow("cf", cropped_fiducial)
+                cv2.imshow("mask", mask)
+                cv2.imshow("edges", edges)
+                cv2.waitKey(500)
 
             # try different houghline threshold values until 4 corners are found
             thresh = 20
             while True:
                 assert thresh > 0, "no valid thresh setting found"
-                print(thresh)
                 lines = MapCoords.draw_vertical_horizontal_lines(edges, thresh, original_image=cropped_fiducial, outputPath=self.output_dir+"/fiducialHoughLines"+str(i)+ "thresh" + str(thresh)+".jpg")
                 corners = MapCoords.find_and_group_intersections(lines)
                 if len(corners) == 4:
                     break
-                thresh-=1
+                thresh -= 1
 
             MapCoords.plot_corners(cropped_fiducial, corners, self.output_dir + "/allCorners" + str(i) + ".jpg")
             corner_real_coords = []
@@ -46,11 +51,12 @@ class MapCoords:
             # MapCoords.plot_corners(cropped_fiducial, corners, self.output_dir + "/cornersfeducial" + str(i) + ".jpg")
             middle_corner = MapCoords.find_closest_corner(corner_real_coords, center)
             inner_corners.append(middle_corner)
+            self.print_debug("done")
 
         # print images
         MapCoords.plot_corners(image, inner_corners, self.output_dir+"/innerCorners.jpg")
         # find homography
-        self.position_matrix = MapCoords.fill_position_matrix_tilted(image, inner_corners, cm_distance)
+        self.position_matrix = MapCoords.fill_position_matrix_homography(image, inner_corners, cm_distance)
         return
 
     def get_real_coord(self, rx, ry):
@@ -60,21 +66,34 @@ class MapCoords:
         return self.image
 
     def reconstruct_image(self):
-        cv2.imshow("test", self.image)
+        print("here")
+        print(self.get_real_coord(540, 420))
+
+        print(self.image.shape)
+        print(self.position_matrix.shape)
+
         scale = 10
         output = np.ones([self.cm_distance*scale+5, self.cm_distance*scale+5, 3])
         xSize, ySize, channels = self.image.shape
-        for x in range(xSize):
-            for y in range(ySize):
-                if self.position_matrix[y][x] != -1:
-                    temp = self.position_matrix[y][x]
-                    outputX = int(temp[0] * scale)-1
-                    outputY = int(temp[1] * scale)-1
-                    output[outputX][outputY] = self.image[x][y]
-                    if outputX == 300:
-                        print(str(outputX) + " " + str(outputY) + " " + str(x) + " " + str(y) + " " + str(self.image[x][y]) + str(output[outputX][outputY]))
 
-        cv2.imwrite('/Users/andylegrand/PycharmProjects/localization_image_testing/output/reim.jpg', output)
+        try:
+            for x in range(xSize):
+                for y in range(ySize):
+                    rval = self.get_real_coord(x, y)
+                    if abs(rval[0]) < 30 and abs(rval[1]) < 30:
+                        #print(str(x) + " " + str(y) + " " + str(self.position_matrix[y][x][0]) + " " + str(self.position_matrix[y][x][1]))
+                        temp = rval + np.array([30, 30])
+                        outputX = int(temp[0] * scale)-1
+                        outputY = int(temp[1] * scale)-1
+                        output[outputX][outputY] = self.image[x][y]
+        except:
+            print("bruh")
+            print(abs(rval[0]))
+            print(abs(rval[0]) < 30)
+            print(str(temp) + str(outputX)+" "+str(outputY))
+            exit()
+        print("writing image")
+        cv2.imwrite('/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/reim.jpg', output)
 
     @staticmethod
     def preprocess_image(image):
@@ -232,7 +251,6 @@ class MapCoords:
 
     @staticmethod
     def plot_corners(img, points, output_path):
-        print(points)
         copy = img.copy()
         for point in points:
             copy = cv2.circle(copy, (point[0], point[1]), radius=5, color=(255, 0, 0), thickness=-1)
@@ -281,6 +299,35 @@ class MapCoords:
         return (point1[0] - point2[0]) / (point1[1] - point2[1])
 
     @staticmethod
+    def warp_point(M, x: int, y: int):
+        d = M[2][0] * x + M[2][1] * y + M[2][2]
+
+        return np.array(
+            [(M[0, 0] * x + M[0, 1] * y + M[0, 2]) / d, (M[1, 0] * x + M[1, 1] * y + M[1, 2]) / d]
+        )
+
+    @staticmethod
+    def fill_position_matrix_homography(image, reference_points, distance):
+        src_points = np.array(reference_points)
+        dst_points = np.array([[0,0],[0,distance],[distance,0],[distance,distance]])
+
+        # find homography with cv2 method
+        transform = cv2.findHomography(src_points, dst_points)
+
+        # create output array
+        height, width, channels = image.shape
+        position_matrix = -1 * np.ones((height, width), dtype=object)
+
+        # apply transform to each pixel
+        for x in range(width):
+            for y in range(height):
+                real_measurement = MapCoords.warp_point(transform[0], x, y)
+                position_matrix[y][x] = real_measurement
+
+        return position_matrix
+
+
+    @staticmethod
     def fill_position_matrix_tilted(image, reference_points, distance):
         height, width, channels = image.shape
         position_matrix = -1 * np.ones((width, height), dtype=object)
@@ -315,7 +362,6 @@ class MapCoords:
                 pixel = [int(left_point[0] + xc), int(MapCoords.eval_linear_equation(top_m, xc, left_point[1]))]
                 real_x = distance * MapCoords.calc_distance(pixel, left_point) / lr_distance
                 position_matrix[pixel[0], pixel[1]] = [real_x, real_y]
-                # print(str(pixel) + ' ' + str(position_matrix[pixel[0], pixel[1]]))
         return position_matrix
 
 # testing class. Shows image then user can click on any pixel to get real world coordinates
@@ -346,11 +392,6 @@ class visual_Test:
         if event == cv2.EVENT_LBUTTONDOWN:
 
             realCoord = self.ed.get_real_coord(x, y)
-
-            # displaying the coordinates
-            # on the Shell
-
-            #print(realCoord[0],' ', realCoord[1],' ', x,' ', y)
 
             # displaying the coordinates
             # on the image window
@@ -386,4 +427,5 @@ if __name__ == '__main__':
     with open('edgeDetector1', 'rb') as f:
         edgeDetector1 = pickle.load(f)
 
+    edgeDetector1.reconstruct_image()
     visual_Test(edgeDetector1)
