@@ -146,5 +146,5 @@ class objectLocalizer:
         return closest_point_between_skew_lines(XA0, XA1, XB0, XB1)
 
 if __name__ == '__main__':
-    ol = objectLocalizer(recalibrate=True)
+    ol = objectLocalizer(recalibrate=False)
     print(ol.localize_object())

@@ -1,3 +1,5 @@
+import time
+
 import cv2
 import numpy as np
 from collections import defaultdict
@@ -74,23 +76,22 @@ class MapCoords:
 
         scale = 10
         output = np.ones([self.cm_distance*scale+5, self.cm_distance*scale+5, 3])
-        xSize, ySize, channels = self.image.shape
+        ySize, xSize, channels = self.image.shape
+        print(str(xSize) + " " + str(ySize))
 
         try:
-            for x in range(xSize):
-                for y in range(ySize):
+            for x in range(ySize):
+                for y in range(xSize):
+                    print(str(x) + " " + str(y) + " " + str(self.position_matrix[x][y][0]) + " " + str(self.position_matrix[x][y][1]))
                     rval = self.get_real_coord(x, y)
                     if abs(rval[0]) < 30 and abs(rval[1]) < 30:
-                        #print(str(x) + " " + str(y) + " " + str(self.position_matrix[y][x][0]) + " " + str(self.position_matrix[y][x][1]))
+                        print(str(x) + " " + str(y) + " " + str(rval[0]) + " " + str(rval[1]))
                         temp = rval + np.array([30, 30])
                         outputX = int(temp[0] * scale)-1
-                        outputY = int(temp[1] * scale)-1
-                        output[outputX][outputY] = self.image[x][y]
+                        outputY = int(temp[1] * scale) - 1
+                        output[outputY][outputX] = self.image[y][x]
         except:
             print("bruh")
-            print(abs(rval[0]))
-            print(abs(rval[0]) < 30)
-            print(str(temp) + str(outputX)+" "+str(outputY))
             exit()
         print("writing image")
         cv2.imwrite('/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/reim.jpg', output)
@@ -321,8 +322,8 @@ class MapCoords:
         # apply transform to each pixel
         for x in range(width):
             for y in range(height):
-                real_measurement = MapCoords.warp_point(transform[0], x, y)
-                position_matrix[y][x] = real_measurement
+                real_measurement = MapCoords.warp_point(transform[0], y, x)
+                position_matrix[y][x] = real_measurement[::-1] # not sure why i need to swap x and y here but it works
 
         return position_matrix
 
@@ -388,6 +389,7 @@ class visual_Test:
     # function to display the coordinates of
     # of the points clicked on the image
     def click_event(self, event, x, y, flags, params):
+        print(str(x)+" "+str(y))
         # checking for left mouse clicks
         if event == cv2.EVENT_LBUTTONDOWN:
 
@@ -402,12 +404,12 @@ class visual_Test:
                         1, (255, 0, 255), 2)
 
             cv2.imshow('image', self.img)
+        time.sleep(.1)
 
         # checking for right mouse clicks
         if event == cv2.EVENT_RBUTTONDOWN:
             # displaying the coordinates
             # on the Shell
-            print(x, ' ', y)
 
             # displaying the coordinates
             # on the image window
@@ -424,7 +426,7 @@ class visual_Test:
 if __name__ == '__main__':
     import pickle
 
-    with open('edgeDetector1', 'rb') as f:
+    with open('edgeDetector2', 'rb') as f:
         edgeDetector1 = pickle.load(f)
 
     edgeDetector1.reconstruct_image()

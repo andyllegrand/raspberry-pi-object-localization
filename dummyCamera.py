@@ -2,6 +2,7 @@
 import cv2
 
 full_res = (4056, 3040)
+
 path1 = "/Users/andylegrand/PycharmProjects/objloc_ras_pi/object_images/object1.jpg"
 path2 = "/Users/andylegrand/PycharmProjects/objloc_ras_pi/object_images/object2.jpg"
 

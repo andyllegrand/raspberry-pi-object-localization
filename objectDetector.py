@@ -35,9 +35,9 @@ class objectDetector:
         self.detector = cv2.SimpleBlobDetector_create(params)
 
     # TODO does not work with white background
-    def detectObject(self, emptyLev, Object, path):
+    def detectObject(self, emptyLev, lev_with_object, path):
         emptyLevGreyScale = cv2.cvtColor(emptyLev, cv2.COLOR_BGR2GRAY)
-        ObjectGreyScale = cv2.cvtColor(Object, cv2.COLOR_BGR2GRAY)
+        ObjectGreyScale = cv2.cvtColor(lev_with_object, cv2.COLOR_BGR2GRAY)
 
         emptyLevGreyScaleBlur = cv2.GaussianBlur(emptyLevGreyScale, (0, 0), cv2.BORDER_DEFAULT)
         ObjectGreyScaleBlur = cv2.GaussianBlur(ObjectGreyScale, (0, 0), cv2.BORDER_DEFAULT)
@@ -50,7 +50,7 @@ class objectDetector:
 
         # Show keypoints
         print(keypoints)
-        im_with_keypoints = cv2.drawKeypoints(sub, keypoints, np.array([]), (0, 0, 255),
+        im_with_keypoints = cv2.drawKeypoints(lev_with_object, keypoints, np.array([]), (0, 0, 255),
                                               cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
         cv2.imwrite(path + "/detect.jpg", im_with_keypoints)
 
