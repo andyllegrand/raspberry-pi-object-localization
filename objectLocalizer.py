@@ -4,13 +4,16 @@ import pickle
 import numpy as np
 
 from dummyCamera import DummyCamera
-#from cameraClass import Camera
+from cameraClass import Camera
 from MapCoords import MapCoords
 
 from objectDetector import objectDetector
 
 DEBUG = True
-USE_DUMMY_CAMERA = True
+USE_DUMMY_CAMERA = False
+
+# path = "/Users/andylegrand/PycharmProjects/objloc_ras_pi"
+path = "/home/pi/piObjLocSync"
 
 full_res = (4056, 3040)
 
@@ -19,27 +22,31 @@ res_scaler = 4
 x = int(full_res[0] / res_scaler)
 y = int(full_res[1] / res_scaler)
 
+# order for corners:
+# 1     2
+# 4     3
+
 # expected pixel values for 4 left corners of fiducial squares (in full res).
-expectedLeftCornersCam1 = np.array([[1500, 950], [2700,950], [1300,2250], [2900,2250]])
-expectedLeftCornersCam2 = np.array([[1400, 1100], [3000,1120], [1500,2450], [2750,2480]])
+expectedLeftCornersCam1 = np.array([[1500, 950], [2700, 950], [2900, 2250], [1300, 2250]])
+expectedLeftCornersCam2 = np.array([[1400, 1100], [3000,1120], [2750,2480], [1500,2450]])
 expectedLeftCornersCam1 = (expectedLeftCornersCam1/res_scaler).astype(int)
 expectedLeftCornersCam2 = (expectedLeftCornersCam2/res_scaler).astype(int)
 
 # expected pixel values for 4 right corners of fiducial squares (in full res).
-expectedRightCornersCam1 = np.array([[2000, 1450], [3200,1450], [1800,2750], [3400,2750]])
-expectedRightCornersCam2 = np.array([[1900, 1600], [3500,1620], [2000,2950], [3150,2980]])
+expectedRightCornersCam1 = np.array([[2000, 1450], [3200,1450], [3400,2750], [1800,2750]])
+expectedRightCornersCam2 = np.array([[1900, 1600], [3500,1620], [3150,2980], [2000,2950]])
 expectedRightCornersCam1 = (expectedRightCornersCam1/res_scaler).astype(int)
 expectedRightCornersCam2 = (expectedRightCornersCam2/res_scaler).astype(int)
 
 # position of ends of camera lenses relative to origin (mm).
-cam1Position = [0, 48, 142]
-cam2Position = [0, -48, 142]
+cam1Position = [0, 45, 140]
+cam2Position = [0, -45, 140]
 
 # distance between fiducials in mm
 square_distance = 60
 
 # distance face plate is above z = 0
-facePlateHeight = 42
+facePlateHeight = 41
 
 def print_debug(message):
     if DEBUG:
@@ -115,8 +122,8 @@ class objectLocalizer:
         assert el1 is not None and el2 is not None
 
         # create new edgeDetectors
-        self.edgeDetector1 = MapCoords(el1, res_scaler, expectedLeftCornersCam1, expectedRightCornersCam1, square_distance, "/home/pi/piObjLocSync/output/cam1")
-        self.edgeDetector2 = MapCoords(el2, res_scaler, expectedLeftCornersCam2, expectedRightCornersCam2, square_distance, "/home/pi/piObjLocSync/output/cam2")
+        self.edgeDetector1 = MapCoords(el1, res_scaler, expectedLeftCornersCam1, expectedRightCornersCam1, square_distance, path + "/output/cam1")
+        self.edgeDetector2 = MapCoords(el2, res_scaler, expectedLeftCornersCam2, expectedRightCornersCam2, square_distance, path + "/output/cam2")
 
         # overwrite previous edge detectors
         with open('edgeDetector1', 'wb') as f:
@@ -127,8 +134,8 @@ class objectLocalizer:
     def localize_object(self):
         img1, img2 = self.camera.take_pic()
         # find object pixel values
-        obj1pv = self.objectDetector.detectObject(self.edgeDetector1.get_image(), img1, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam1")
-        obj2pv = self.objectDetector.detectObject(self.edgeDetector2.get_image(), img2, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam2")
+        obj1pv = self.objectDetector.detectObject(self.edgeDetector1.get_image(), img1, path + "/output/cam1")
+        obj2pv = self.objectDetector.detectObject(self.edgeDetector2.get_image(), img2, path + "/output/cam2")
 
         # find real world coordinates (projected onto fiducial plane)
         xyCam1 = self.edgeDetector1.get_real_coord(obj1pv[0], obj1pv[1])
@@ -147,4 +154,6 @@ class objectLocalizer:
 
 if __name__ == '__main__':
     ol = objectLocalizer(recalibrate=False)
-    print(ol.localize_object())
+    while True:
+        input("ready")
+        print(ol.localize_object())
