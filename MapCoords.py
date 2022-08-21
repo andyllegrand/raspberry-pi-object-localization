@@ -14,15 +14,19 @@ class MapCoords:
         if self.debug:
             print(message)
 
-    def __init__(self, image, scale, expected_positions_left, expected_positions_right, cm_distance, outputDir, debug = True):
+    def __init__(self, image, expected_positions_left, expected_positions_right, cm_distance, outputDir, debug = True):
         self.debug = debug
         self.image = image
         self.cm_distance = cm_distance
         self.output_dir = outputDir
         inner_corners = []
-        l, w, c = np.shape(image)
-        #center = [int(l/2), int(w/2)]
-        center = [556, 419] # TODO this really should not be hardcoded
+
+        # get upper left and lower right coordinates of quadrants
+        h, w, c = np.shape(image)
+        center = [int(h / 2), int(w / 2)]
+
+        expected_positions_left = [[0,0], [0,w/2], [h/2,w/2], [0,h/2]]
+        expected_positions_right = [[h/2, w/2], [h/2, w], [h, w/2], [h, w]]
 
         # crop each fiducial, identify all 4 corners, then save corner closest to center of image
         for i in range(4):
@@ -47,22 +51,23 @@ class MapCoords:
                     break
                 thresh -= 1
 
+            # plot corners
             MapCoords.plot_corners(cropped_fiducial, corners, self.output_dir + "/allCorners" + str(i) + ".jpg")
-            corner_real_coords = []
-            for corner in corners: corner_real_coords.append([corner[0] + expected_positions_left[i][0], corner[1] + expected_positions_left[i][1]])
-            # MapCoords.plot_corners(cropped_fiducial, corners, self.output_dir + "/cornersfeducial" + str(i) + ".jpg")
-            middle_corner = MapCoords.find_closest_corner(corner_real_coords, center)
-            inner_corners.append(middle_corner)
+
+            # find inner corner
+            MapCoords.sort_points(corners)
+            inner_corner = corners[(i+2) % 4]
+            offset_inner_corner = [inner_corner[0] + expected_positions_left[i][0], inner_corner[1] + expected_positions_left[i][1]]
+            inner_corners.append(offset_inner_corner)
             self.print_debug("done")
 
         # print images
         MapCoords.plot_corners(image, inner_corners, self.output_dir+"/innerCorners.jpg")
         # find homography
-        self.position_matrix = MapCoords.fill_position_matrix_homography(image, inner_corners, cm_distance)
-        return
+        self.homography_transform = MapCoords.get_homography_transform(image, inner_corners, cm_distance)[0]
 
     def get_real_coord(self, rx, ry):
-        return self.position_matrix[rx][ry] - np.array([30,30]) # subtract 30 to set 0,0 to center
+        return MapCoords.warp_point(self.homography_transform, rx, ry) - np.array([30,30]) # subtract 30 to set 0,0 to center
 
     def get_image(self):
         return self.image
@@ -72,27 +77,20 @@ class MapCoords:
         print(self.get_real_coord(540, 420))
 
         print(self.image.shape)
-        print(self.position_matrix.shape)
 
         scale = 10
         output = np.ones([self.cm_distance*scale+5, self.cm_distance*scale+5, 3])
         ySize, xSize, channels = self.image.shape
         print(str(xSize) + " " + str(ySize))
 
-        try:
-            for x in range(ySize):
-                for y in range(xSize):
-                    print(str(x) + " " + str(y) + " " + str(self.position_matrix[x][y][0]) + " " + str(self.position_matrix[x][y][1]))
-                    rval = self.get_real_coord(x, y)
-                    if abs(rval[0]) < 30 and abs(rval[1]) < 30:
-                        print(str(x) + " " + str(y) + " " + str(rval[0]) + " " + str(rval[1]))
-                        temp = rval + np.array([30, 30])
-                        outputX = int(temp[0] * scale)-1
-                        outputY = int(temp[1] * scale) - 1
-                        output[outputY][outputX] = self.image[y][x]
-        except:
-            print("bruh")
-            exit()
+        for x in range(ySize):
+            for y in range(xSize):
+                rval = self.get_real_coord(x, y)
+                if abs(rval[0]) < 30 and abs(rval[1]) < 30:
+                    temp = rval + np.array([30, 30])
+                    outputX = int(temp[0] * scale)-1
+                    outputY = int(temp[1] * scale) - 1
+                    output[outputY][outputX] = self.image[y][x]
         print("writing image")
         cv2.imwrite('/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/reim.jpg', output)
 
@@ -274,6 +272,19 @@ class MapCoords:
                 minDist = dist
         return closest_point
 
+    # sorts in place
+    # 1     2
+    # 3     4
+    @staticmethod
+    def sort_points(points):
+        # sort by y
+        points.sort(key=lambda row: (row[1]))
+        # break into 2 arrays then sort by x
+        points[0:2] = sorted(points[0:2])
+        points[2:4] = sorted(points[2:4], reverse=True)
+
+        print(points)
+
     @staticmethod
     def average_points(points):
         total = [0,0]
@@ -304,28 +315,18 @@ class MapCoords:
         d = M[2][0] * x + M[2][1] * y + M[2][2]
 
         return np.array(
-            [(M[0, 0] * x + M[0, 1] * y + M[0, 2]) / d, (M[1, 0] * x + M[1, 1] * y + M[1, 2]) / d]
+            [(M[1, 0] * x + M[1, 1] * y + M[1, 2]) / d, (M[0, 0] * x + M[0, 1] * y + M[0, 2]) / d]
         )
 
     @staticmethod
-    def fill_position_matrix_homography(image, reference_points, distance):
+    def get_homography_transform(reference_points, distance):
         src_points = np.array(reference_points)
-        dst_points = np.array([[0,0],[0,distance],[distance,0],[distance,distance]])
+        dst_points = np.array([[0,0],[0,distance],[distance,distance], [distance,0]])
 
-        # find homography with cv2 method
+        # find constants with cv2 method
         transform = cv2.findHomography(src_points, dst_points)
 
-        # create output array
-        height, width, channels = image.shape
-        position_matrix = -1 * np.ones((height, width), dtype=object)
-
-        # apply transform to each pixel
-        for x in range(width):
-            for y in range(height):
-                real_measurement = MapCoords.warp_point(transform[0], y, x)
-                position_matrix[y][x] = real_measurement[::-1] # not sure why i need to swap x and y here but it works
-
-        return position_matrix
+        return transform
 
 
     @staticmethod
@@ -430,4 +431,4 @@ if __name__ == '__main__':
         edgeDetector1 = pickle.load(f)
 
     edgeDetector1.reconstruct_image()
-    visual_Test(edgeDetector1)
+    #visual_Test(edgeDetector1)

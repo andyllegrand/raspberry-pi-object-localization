@@ -8,8 +8,8 @@ class objectDetector:
         params = cv2.SimpleBlobDetector_Params()
 
         # Change thresholds
-        params.minThreshold = 0
-        params.maxThreshold = 230
+        params.minThreshold = 55
+        params.maxThreshold = 255
         params.thresholdStep = 10
         params.minRepeatability = 2
 

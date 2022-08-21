@@ -1,35 +1,18 @@
+import math
 import cv2
+import numpy as np
 import pickle
 
-import numpy as np
-
+from cameraClass import Camera
 from dummyCamera import DummyCamera
-#from cameraClass import Camera
 from MapCoords import MapCoords
 
-from objectDetector import objectDetector
+USE_DUMMY_CAMERA = False
 
-DEBUG = True
-USE_DUMMY_CAMERA = True
+scaled_res = (0, 0)
 
-full_res = (4056, 3040)
-
-# inverse resolution scalar. Lower number means more accuracy, higher number means better runtime and less memory issues
-res_scaler = 4
-x = int(full_res[0] / res_scaler)
-y = int(full_res[1] / res_scaler)
-
-# expected pixel values for 4 left corners of fiducial squares (in full res).
-expectedLeftCornersCam1 = np.array([[1500, 950], [2700,950], [1300,2250], [2900,2250]])
-expectedLeftCornersCam2 = np.array([[1400, 1100], [3000,1120], [1500,2450], [2750,2480]])
-expectedLeftCornersCam1 = (expectedLeftCornersCam1/res_scaler).astype(int)
-expectedLeftCornersCam2 = (expectedLeftCornersCam2/res_scaler).astype(int)
-
-# expected pixel values for 4 right corners of fiducial squares (in full res).
-expectedRightCornersCam1 = np.array([[2000, 1450], [3200,1450], [1800,2750], [3400,2750]])
-expectedRightCornersCam2 = np.array([[1900, 1600], [3500,1620], [2000,2950], [3150,2980]])
-expectedRightCornersCam1 = (expectedRightCornersCam1/res_scaler).astype(int)
-expectedRightCornersCam2 = (expectedRightCornersCam2/res_scaler).astype(int)
+im1crop = []
+im2crop = []
 
 # position of ends of camera lenses relative to origin (mm).
 cam1Position = [0, 48, 142]
@@ -41,38 +24,134 @@ square_distance = 60
 # distance face plate is above z = 0
 facePlateHeight = 42
 
-def print_debug(message):
-    if DEBUG:
-        print(message)
 
-def imwrite_debug(path, image):
-    if DEBUG:
-        cv2.imwrite(path, image)
+class ObjectLocalizer:
 
-def closest_point_between_skew_lines(XA0, XA1, XB0, XB1):
-    # compute unit vectors of directions of lines A and B
-    UA = (XA1 - XA0) / np.linalg.norm(XA1 - XA0)
-    UB = (XB1 - XB0) / np.linalg.norm(XB1 - XB0)
-    # find unit direction vector for line C, which is perpendicular to lines A and B
-    UC = np.cross(UB, UA)
-    UC /= np.linalg.norm(UC)
+    # following 2 methods from https://stackoverflow.com/questions/55641425/check-if-two-contours-intersect
+    @staticmethod
+    def ccw(A, B, C):
+        return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
 
-    # solve the system derived in user2255770's answer from StackExchange: https://math.stackexchange.com/q/1993990
-    RHS = XB0 - XA0
-    LHS = np.array([UA, -UB, UC]).T
-    t1, t2, t3 = np.linalg.solve(LHS, RHS)
+    @staticmethod
+    def contour_intersect(cnt_ref, cnt_query):
 
-    point1 = XA0 + t1 * UA
-    point2 = XB0 + t2 * UB
+        ## Contour is a list of points
+        ## Connect each point to the following point to get a line
+        ## If any of the lines intersect, then break
 
-    avg = (point1 + point2) / 2
-    return avg
+        for ref_idx in range(len(cnt_ref) - 1):
+            ## Create reference line_ref with point AB
+            A = cnt_ref[ref_idx][0]
+            B = cnt_ref[ref_idx + 1][0]
 
-class objectLocalizer:
+            for query_idx in range(len(cnt_query) - 1):
+                ## Create query line_query with point CD
+                C = cnt_query[query_idx][0]
+                D = cnt_query[query_idx + 1][0]
 
-    # recalibrate: determines whether to use last used edge detectors. If set to true recalibrate
-    # method is called
-    def __init__(self, recalibrate=True):
+                ## Check if line intersect
+                if ObjectLocalizer.ccw(A, C, D) != ObjectLocalizer.ccw(B, C, D) and ObjectLocalizer.ccw(A, B, C) != ObjectLocalizer.ccw(A, B, D):
+                    ## If true, break loop earlier
+                    return True
+
+        return False
+
+    @staticmethod
+    # closer to z = 0 threshold should be greater because further from faceplate
+    def distance_thresh(obj_point, cam_point, z_height, thresh_const):
+
+        return 0
+
+    @staticmethod
+    def closest_points_on_skew_lines(XA0, XA1, XB0, XB1):
+        # compute unit vectors of directions of lines A and B
+        UA = (XA1 - XA0) / np.linalg.norm(XA1 - XA0)
+        UB = (XB1 - XB0) / np.linalg.norm(XB1 - XB0)
+        # find unit direction vector for line C, which is perpendicular to lines A and B
+        UC = np.cross(UB, UA)
+        UC /= np.linalg.norm(UC)
+
+        # solve the system derived in user2255770's answer from StackExchange: https://math.stackexchange.com/q/1993990
+        RHS = XB0 - XA0
+        LHS = np.array([UA, -UB, UC]).T
+        t1, t2, t3 = np.linalg.solve(LHS, RHS)
+
+        point1 = XA0 + t1 * UA
+        point2 = XB0 + t2 * UB
+
+        return point1, point2
+
+    @staticmethod
+    def get_countours_and_apply_filters(im, thresh_val, filters):
+        thresh_im = cv2.threshold(im, thresh_val, 255, 0)
+        contours, hierachy = cv2.findContours(thresh_val, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        contours_filter = contours
+        for filter in filters:
+            contours_filter = filter.apply(contours_filter)
+
+        return contours_filter
+
+    @staticmethod
+    def get_contour_center(contour):
+        M = cv2.moments(contour)
+        cX = int(M["m10"] / M["m00"])
+        cY = int(M["m01"] / M["m00"])
+        return cX, cY
+
+    @staticmethod
+    def get_contour_centers_real(contours, mapcoords, zval):
+        centers = []
+        for contour in contours:
+            px, py = ObjectLocalizer.get_contour_center(contour)
+            rx, ry = mapcoords.get_real_coord(px, py)
+            centers.append(np.array([rx,ry,zval]))
+        return centers
+
+    @staticmethod
+    def distance3d(p1, p2):
+        return math.sqrt((p1[0]+p2[0])**2 + (p1[1]+p2[1])**2 + (p1[2]+p2[2])**2)
+
+    @staticmethod
+    def within_boundaries(point):
+        return True
+
+    def localize_object(self):
+        # get undistorted images
+        im1, im2 = None, None
+
+        im1_blur = cv2.medianBlur(im1, 5)
+        im2_blur = cv2.medianBlur(im2, 5)
+
+        im1_gray = cv2.cvtColor(im1_blur, cv2.COLOR_BGR2GRAY)
+        im2_gray = cv2.cvtColor(im2_blur, cv2.COLOR_BGR2GRAY)
+
+        counter = self.min_thresh
+        while counter <= self.max_thresh:
+            contours_im1 = ObjectLocalizer.get_countours_and_apply_filters(im1_gray, counter, self.filters)
+            contours_im2 = ObjectLocalizer.get_countours_and_apply_filters(im2_gray, counter, self.filters)
+
+            im1_cont_centers = ObjectLocalizer.get_contour_centers_real(contours_im1, self.mc1, facePlateHeight)
+            im2_cont_centers = ObjectLocalizer.get_contour_center_real(contours_im2, self.mc2, facePlateHeight)
+
+            for im1_cont_center in im1_cont_centers:
+                for im2_cont_center in im2_cont_centers:
+                    p1, p2 = ObjectLocalizer.closest_points_on_skew_lines(cam1Position, im1_cont_center, cam2Position, im2_cont_center)
+                    ave_z = (p1[2] + p2[2])/2
+                    thresh = ObjectLocalizer.distance_thresh(ave_z)
+                    distance = ObjectLocalizer.distance3d(p1, p2)
+                    midpoint = (p1 + p2) / 2
+                    if thresh > distance and ObjectLocalizer.within_boundaries(midpoint):
+                        return midpoint
+
+            counter += self.step
+
+        return None
+
+    def __init__(self, min, max, step):
+        self.min_thresh = min
+        self.max_thresh = max
+        self.step = step
 
         if not USE_DUMMY_CAMERA:
             # load intrensic camera parameters. Used to undistort images from cameras
@@ -81,70 +160,12 @@ class objectLocalizer:
             with open('cam2Params', 'rb') as f:
                 cam2_params = pickle.load(f)
 
-            cam2_params = cam1_params # TODO find a better solution for this
-            print_debug("starting cameras...")
-            self.camera = Camera([cam1_params, cam2_params], res_scaler)
+            self.camera = Camera([cam1_params, cam2_params], scaled_res, im1crop, im2crop)
         else:
-            self.camera = DummyCamera(None, res_scaler)
+            self.camera = DummyCamera(None, scaled_res, im1crop, im2crop)
+        # initialize camera
 
-        self.edgeDetector1 = None
-        self.edgeDetector2 = None
-        if recalibrate:
-            self.recalibrate()
-        else:
-            print_debug("reading in edge detector 1...")
-            with open('edgeDetector1', 'rb') as f:
-                self.edgeDetector1 = pickle.load(f)
-            print_debug("done")
-
-            print_debug("reading in edge detector 2...")
-            with open('edgeDetector2', 'rb') as f:
-                self.edgeDetector2 = pickle.load(f)
-            print_debug("done")
-
-        # initialize object detector
-        print_debug("creating object detector...")
-        self.objectDetector = objectDetector()
-        print_debug("done")
-        print_debug("initialization complete")
-
-    def recalibrate(self):
-        # get empty images
-        el1, el2 = self.camera.take_pic()
-
-        assert el1 is not None and el2 is not None
-
-        # create new edgeDetectors
-        self.edgeDetector1 = MapCoords(el1, res_scaler, expectedLeftCornersCam1, expectedRightCornersCam1, square_distance, "/home/pi/piObjLocSync/output/cam1")
-        self.edgeDetector2 = MapCoords(el2, res_scaler, expectedLeftCornersCam2, expectedRightCornersCam2, square_distance, "/home/pi/piObjLocSync/output/cam2")
-
-        # overwrite previous edge detectors
-        with open('edgeDetector1', 'wb') as f:
-            pickle.dump(self.edgeDetector1, f)
-        with open('edgeDetector2', 'wb') as f:
-            pickle.dump(self.edgeDetector2, f)
-
-    def localize_object(self):
-        img1, img2 = self.camera.take_pic()
-        # find object pixel values
-        obj1pv = self.objectDetector.detectObject(self.edgeDetector1.get_image(), img1, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam1")
-        obj2pv = self.objectDetector.detectObject(self.edgeDetector2.get_image(), img2, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam2")
-
-        # find real world coordinates (projected onto fiducial plane)
-        xyCam1 = self.edgeDetector1.get_real_coord(obj1pv[0], obj1pv[1])
-        xyCam2 = self.edgeDetector2.get_real_coord(obj2pv[0], obj2pv[1])
-
-        print(xyCam1)
-        print(xyCam2)
-
-        # create vectors between camera and fiducial plane coordinates.
-        XA0 = np.array(np.append(xyCam1, facePlateHeight))
-        XA1 = np.array(cam1Position)
-        XB0 = np.array(np.append(xyCam2, facePlateHeight))
-        XB1 = np.array(cam2Position)
-
-        return closest_point_between_skew_lines(XA0, XA1, XB0, XB1)
-
-if __name__ == '__main__':
-    ol = objectLocalizer(recalibrate=False)
-    print(ol.localize_object())
+        # initialize mapcoords
+        self.mc1 = MapCoords()
+        self.mc2 = MapCoords()
+        return
