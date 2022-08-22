@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import pickle
 
-from cameraClass import Camera
+from imagePreprocessor import ImagePreprocessor
 from dummyCamera import DummyCamera
 from MapCoords import MapCoords
 from filters import SizeFilter, CircularityFilter
@@ -31,17 +31,17 @@ lev_radius = 5
 # height of lev in mm
 lev_height = 5
 
-obj_min_size = 0
-obj_max_size = 0
+obj_min_size = 1000
+obj_max_size = 4000
 
-obj_circularity = 0
+obj_circularity = .5
 
 class ObjectLocalizer:
 
     @staticmethod
     def create_filters():
-        area = SizeFilter(min, max)
-        circularity = CircularityFilter(.8)
+        area = SizeFilter(obj_min_size, obj_max_size)
+        circularity = CircularityFilter(obj_circularity)
         return [area, circularity]
 
     # following 2 methods from https://stackoverflow.com/questions/55641425/check-if-two-contours-intersect
@@ -102,9 +102,8 @@ class ObjectLocalizer:
         return point1, point2
 
     @staticmethod
-    def get_countours_and_apply_filters(im, thresh_val, filters):
-        thresh_im = cv2.threshold(im, thresh_val, 255, 0)
-        contours, hierachy = cv2.findContours(thresh_val, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    def get_contours_and_apply_filters(thresh_im, filters):
+        contours, hierachy = cv2.findContours(thresh_im, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
         contours_filter = contours
         for filter in filters:
@@ -142,7 +141,7 @@ class ObjectLocalizer:
 
     def localize_object(self):
         # get undistorted images
-        im1, im2 = self.camera.take_pic()
+        im1, im2 = self.image_preprocessor.take_pic()
 
         # apply blur
         im1_blur = cv2.medianBlur(im1, 5)
@@ -155,8 +154,11 @@ class ObjectLocalizer:
         # Loop through threshold value until object is found
         counter = self.min_thresh
         while counter <= self.max_thresh:
-            contours_im1 = ObjectLocalizer.get_countours_and_apply_filters(im1_gray, counter, self.filters)
-            contours_im2 = ObjectLocalizer.get_countours_and_apply_filters(im2_gray, counter, self.filters)
+            thresh_im1 = cv2.threshold(im1_gray, counter, 255, 0)
+            thresh_im2 = cv2.threshold(im2_gray, counter, 255, 0)
+
+            contours_im1 = ObjectLocalizer.get_contours_and_apply_filters(thresh_im1, self.filters)
+            contours_im2 = ObjectLocalizer.get_contours_and_apply_filters(thresh_im2, self.filters)
 
             # get mm coordinates of contours
             im1_cont_centers = ObjectLocalizer.get_contour_centers_real(contours_im1, self.mc1, facePlateHeight)
@@ -176,27 +178,26 @@ class ObjectLocalizer:
             counter += self.step
         return None
 
-    def __init__(self, min, max, step):
-        self.min_thresh = min
-        self.max_thresh = max
+    def __init__(self, im1, im2, thresh_min, thresh_max, step):
+        self.min_thresh = thresh_min
+        self.max_thresh = thresh_max
         self.step = step
 
         self.filters = ObjectLocalizer.create_filters()
 
-        # initialize camera
-        if not USE_DUMMY_CAMERA:
-            # load intrensic camera parameters. Used to undistort images from cameras
-            with open('cam1Params', 'rb') as f:
-                cam1_params = pickle.load(f)
-            with open('cam2Params', 'rb') as f:
-                cam2_params = pickle.load(f)
+        # load intrensic camera parameters. Used to undistort images from cameras
+        with open('cam1Params', 'rb') as f:
+            cam1_params = pickle.load(f)
+        with open('cam2Params', 'rb') as f:
+            cam2_params = pickle.load(f)
 
-            self.camera = Camera([cam1_params, cam2_params], scaled_res, im1crop, im2crop)
-        else:
-            self.camera = DummyCamera(None, None)
-
-        im1, im2 = self.camera.take_pic()
+        self.image_preprocessor = ImagePreprocessor([cam1_params, cam2_params], scaled_res, im1crop, im2crop)
 
         # initialize mapcoords
         self.mc1 = MapCoords(im1, square_distance, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam1")
         self.mc2 = MapCoords(im2, square_distance, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam2")
+
+
+# demo that
+if __name__ == '__main__':
+    pass

@@ -17,14 +17,15 @@ def find_min_max_areas(radius, picture_res, cam_pos, lev_top, faceplate_height, 
     return 0,0
 
 class SizeFilter:
-    def __init__(self, min, max):
-        self.min = min
-        self.max = max
+    def __init__(self, min_val, max_val):
+        self.min = min_val
+        self.max = max_val
 
     def apply(self, contours):
         passed = []
         for contour in contours:
-            if self.min < cv2.contourArea(contour) < self.max:
+            area = cv2.contourArea(contour)
+            if self.min < area < self.max:
                 passed.append(contour)
         return passed
 
@@ -37,8 +38,9 @@ class CircularityFilter:
         for contour in contours:
             area = cv2.contourArea(contour)
             arclength = cv2.arcLength(contour, True)
-            circularity = 4 * math.pi * area / (arclength * arclength)
-            if self.circularity_thresh < circularity:
-                passed.append(contour)
+            if arclength != 0.0:
+                circularity = 4 * math.pi * area / (arclength * arclength)
+                if self.circularity_thresh < circularity:
+                    passed.append(contour)
         return passed
 

@@ -1,6 +1,6 @@
 # script which captures multiple images and saves to file
 
-from cameraClass import Camera
+from imagePreprocessor import ImagePreprocessor
 from MapCoords import MapCoords
 import cv2
 import os
@@ -16,7 +16,7 @@ with open('cam2Params', 'rb') as f:
     cam2_params = pickle.load(f)
 '''
 
-camera = Camera([cam1_params, cam2_params], 1)
+camera = ImagePreprocessor([cam1_params, cam2_params], 1)
 
 counter = 0
 

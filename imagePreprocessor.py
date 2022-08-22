@@ -1,17 +1,13 @@
 import cv2
 import numpy as np
 
-class Camera:
-    def __init__(self, cam_params, desired_res, im1crop, im2crop, video_feed=0):
+
+class ImagePreprocessor:
+    def __init__(self, cam_params, desired_res, im1crop, im2crop):
         self.cam_params = cam_params
         self.desired_res = desired_res
         self.im1crop = im1crop
         self.im2crop = im2crop
-
-        self.cap = cv2.VideoCapture(video_feed)
-        if not self.cap.isOpened():
-            print("Cannot open camera")
-            exit()
 
     # actually returns rectangular crop, can modify in the future to return an actual 4 point crop
     @staticmethod
@@ -27,13 +23,12 @@ class Camera:
 
         return cropped_im
 
-    def take_pic_and_undistort(self):
-        double_im = self.cap.read()
+    def undistort(self, im):
         # crop image and stretch along horizontal axis
-        height, width, channels = double_im.shape
+        height, width, channels = im.shape
         middle = int(width / 2)
-        im1 = double_im[:, :middle]
-        im2 = double_im[:, middle:]
+        im1 = im[:, :middle]
+        im2 = im[:, middle:]
 
         # images compressed along x-axis. Stretch to undo this
         im1 = cv2.resize(im1, (width, height))
@@ -58,13 +53,15 @@ class Camera:
             im2 = cv2.undistort(im2, camera_matrix2, distortion_coefficients2, None,
                                 scaled_camera_matrix)
 
+        return im1, im2
+
     # gets image, undistorts, crops, and resizes. Returns 2 processed images
-    def take_pic_and_crop(self):
-        im1, im2 = self.take_pic_and_undistort()
+    def undistort_and_crop(self, im):
+        im1, im2 = self.undistort(im)
 
         # perform crops
-        im1 = Camera.four_point_crop(im1, self.im1crop)
-        im2 = Camera.four_point_crop(im2, self.im2crop)
+        im1 = ImagePreprocessor.four_point_crop(im1, self.im1crop)
+        im2 = ImagePreprocessor.four_point_crop(im2, self.im2crop)
 
         # resize to desired size
         im1 = cv2.resize(im1, self.desired_res)
@@ -82,10 +79,11 @@ if __name__ == '__main__':
     #cam2_params = cam1_params
 
     print("starting cameras...")
-    camera = Camera([cam1_params, cam2_params], 1)
+    camera = ImagePreprocessor([cam1_params, cam2_params], 1)
 
     im1, im2 = camera.take_pic()
     print(str(im1.shape))
     cv2.imwrite("/home/pi/piObjLocSync/output/object1.jpg", im1)
     cv2.imwrite("/home/pi/piObjLocSync/output/object2.jpg", im2)
     print("done")
+
