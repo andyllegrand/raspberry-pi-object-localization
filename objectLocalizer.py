@@ -6,6 +6,7 @@ import pickle
 from cameraClass import Camera
 from dummyCamera import DummyCamera
 from MapCoords import MapCoords
+from filters import SizeFilter, CircularityFilter
 
 USE_DUMMY_CAMERA = False
 
@@ -15,8 +16,8 @@ im1crop = []
 im2crop = []
 
 # position of ends of camera lenses relative to origin (mm).
-cam1Position = [0, 48, 142]
-cam2Position = [0, -48, 142]
+cam1Position = np.array([0, 48, 142])
+cam2Position = np.array([0, -48, 142])
 
 # distance between fiducials in mm
 square_distance = 60
@@ -24,8 +25,24 @@ square_distance = 60
 # distance face plate is above z = 0
 facePlateHeight = 42
 
+# radius of lev in mm
+lev_radius = 5
+
+# height of lev in mm
+lev_height = 5
+
+obj_min_size = 0
+obj_max_size = 0
+
+obj_circularity = 0
 
 class ObjectLocalizer:
+
+    @staticmethod
+    def create_filters():
+        area = SizeFilter(min, max)
+        circularity = CircularityFilter(.8)
+        return [area, circularity]
 
     # following 2 methods from https://stackoverflow.com/questions/55641425/check-if-two-contours-intersect
     @staticmethod
@@ -57,10 +74,13 @@ class ObjectLocalizer:
         return False
 
     @staticmethod
-    # closer to z = 0 threshold should be greater because further from faceplate
-    def distance_thresh(obj_point, cam_point, z_height, thresh_const):
+    # closer to z = 0 threshold should be greater because further from faceplate. Use similar triangles to find ajusted thresh
+    def distance_thresh(obj_point, faceplate_point, cam_point, thresh_const):
+        faceplate_distance = ObjectLocalizer.distance3d(cam_point, faceplate_point)
+        obj_distance = ObjectLocalizer.distance3d(cam_point, obj_point)
 
-        return 0
+        thresh = (thresh_const * obj_distance) / faceplate_distance
+        return thresh
 
     @staticmethod
     def closest_points_on_skew_lines(XA0, XA1, XB0, XB1):
@@ -113,39 +133,47 @@ class ObjectLocalizer:
         return math.sqrt((p1[0]+p2[0])**2 + (p1[1]+p2[1])**2 + (p1[2]+p2[2])**2)
 
     @staticmethod
+    def distance2d(p1, p2):
+        return math.sqrt((p1[0] + p2[0]) ** 2 + (p1[1] + p2[1]) ** 2)
+
+    @staticmethod
     def within_boundaries(point):
-        return True
+        return ObjectLocalizer.distance2d([0,0], point) and point[2] < lev_height
 
     def localize_object(self):
         # get undistorted images
-        im1, im2 = None, None
+        im1, im2 = self.camera.take_pic()
 
+        # apply blur
         im1_blur = cv2.medianBlur(im1, 5)
         im2_blur = cv2.medianBlur(im2, 5)
 
+        # convert to grayscale
         im1_gray = cv2.cvtColor(im1_blur, cv2.COLOR_BGR2GRAY)
         im2_gray = cv2.cvtColor(im2_blur, cv2.COLOR_BGR2GRAY)
 
+        # Loop through threshold value until object is found
         counter = self.min_thresh
         while counter <= self.max_thresh:
             contours_im1 = ObjectLocalizer.get_countours_and_apply_filters(im1_gray, counter, self.filters)
             contours_im2 = ObjectLocalizer.get_countours_and_apply_filters(im2_gray, counter, self.filters)
 
+            # get mm coordinates of contours
             im1_cont_centers = ObjectLocalizer.get_contour_centers_real(contours_im1, self.mc1, facePlateHeight)
-            im2_cont_centers = ObjectLocalizer.get_contour_center_real(contours_im2, self.mc2, facePlateHeight)
+            im2_cont_centers = ObjectLocalizer.get_contour_centers_real(contours_im2, self.mc2, facePlateHeight)
 
+            # check if any contours are in range of each other
             for im1_cont_center in im1_cont_centers:
                 for im2_cont_center in im2_cont_centers:
                     p1, p2 = ObjectLocalizer.closest_points_on_skew_lines(cam1Position, im1_cont_center, cam2Position, im2_cont_center)
-                    ave_z = (p1[2] + p2[2])/2
-                    thresh = ObjectLocalizer.distance_thresh(ave_z)
+                    error1 = ObjectLocalizer.distance_thresh(p1, im1_cont_center, cam1Position, 0)
+                    error2 = ObjectLocalizer.distance_thresh(p2, im2_cont_center, cam2Position, 0)
                     distance = ObjectLocalizer.distance3d(p1, p2)
                     midpoint = (p1 + p2) / 2
-                    if thresh > distance and ObjectLocalizer.within_boundaries(midpoint):
+                    if error1 + error2 > distance and ObjectLocalizer.within_boundaries(midpoint):
                         return midpoint
 
             counter += self.step
-
         return None
 
     def __init__(self, min, max, step):
@@ -153,6 +181,9 @@ class ObjectLocalizer:
         self.max_thresh = max
         self.step = step
 
+        self.filters = ObjectLocalizer.create_filters()
+
+        # initialize camera
         if not USE_DUMMY_CAMERA:
             # load intrensic camera parameters. Used to undistort images from cameras
             with open('cam1Params', 'rb') as f:
@@ -162,10 +193,10 @@ class ObjectLocalizer:
 
             self.camera = Camera([cam1_params, cam2_params], scaled_res, im1crop, im2crop)
         else:
-            self.camera = DummyCamera(None, scaled_res, im1crop, im2crop)
-        # initialize camera
+            self.camera = DummyCamera(None, None)
+
+        im1, im2 = self.camera.take_pic()
 
         # initialize mapcoords
-        self.mc1 = MapCoords()
-        self.mc2 = MapCoords()
-        return
+        self.mc1 = MapCoords(im1, square_distance, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam1")
+        self.mc2 = MapCoords(im2, square_distance, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam2")

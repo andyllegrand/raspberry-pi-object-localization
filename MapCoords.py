@@ -14,7 +14,7 @@ class MapCoords:
         if self.debug:
             print(message)
 
-    def __init__(self, image, expected_positions_left, expected_positions_right, cm_distance, outputDir, debug = True):
+    def __init__(self, image, cm_distance, outputDir, debug = True):
         self.debug = debug
         self.image = image
         self.cm_distance = cm_distance
