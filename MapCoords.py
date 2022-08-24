@@ -5,10 +5,12 @@ import numpy as np
 from collections import defaultdict
 import sys
 
+from imagePreprocessor import ImagePreprocessor
+
 
 class MapCoords:
-    RED_THRESH = 100
-    GREEN_BLUE_THRESH = 50
+    RED_THRESH = 125
+    GREEN_BLUE_THRESH = 60
 
     def print_debug(self, message):
         if self.debug:
@@ -25,8 +27,11 @@ class MapCoords:
         h, w, c = np.shape(image)
         center = [int(h / 2), int(w / 2)]
 
-        expected_positions_left = [[0,0], [0,w/2], [h/2,w/2], [0,h/2]]
-        expected_positions_right = [[h/2, w/2], [h/2, w], [h, w/2], [h, w]]
+        expected_positions_left = [[0,0], [center[0], 0], [center[1], center[0]], [0, center[0]]]
+        expected_positions_right = [[center[0], center[1]], [h, center[1]], [h, w], [center[1],w]]
+
+        print(expected_positions_left)
+        print(expected_positions_right)
 
         # crop each fiducial, identify all 4 corners, then save corner closest to center of image
         for i in range(4):
@@ -39,12 +44,15 @@ class MapCoords:
                 cv2.imshow("cf", cropped_fiducial)
                 cv2.imshow("mask", mask)
                 cv2.imshow("edges", edges)
-                cv2.waitKey(500)
+                cv2.waitKey(0)
 
             # try different houghline threshold values until 4 corners are found
-            thresh = 20
+            thresh = 30
             while True:
-                assert thresh > 0, "no valid thresh setting found"
+                if thresh <= 0:
+                    cv2.imshow("cf", cropped_fiducial)
+                    cv2.waitKey(0)
+                    exit()
                 lines = MapCoords.draw_vertical_horizontal_lines(edges, thresh, original_image=cropped_fiducial, outputPath=self.output_dir+"/fiducialHoughLines"+str(i)+ "thresh" + str(thresh)+".jpg")
                 corners = MapCoords.find_and_group_intersections(lines)
                 if len(corners) == 4:
@@ -64,7 +72,7 @@ class MapCoords:
         # print images
         MapCoords.plot_corners(image, inner_corners, self.output_dir+"/innerCorners.jpg")
         # find homography
-        self.homography_transform = MapCoords.get_homography_transform(image, inner_corners, cm_distance)[0]
+        self.homography_transform = MapCoords.get_homography_transform(inner_corners, cm_distance)[0]
 
     def get_real_coord(self, rx, ry):
         return MapCoords.warp_point(self.homography_transform, rx, ry) - np.array([30,30]) # subtract 30 to set 0,0 to center
@@ -427,8 +435,18 @@ class visual_Test:
 if __name__ == '__main__':
     import pickle
 
-    with open('edgeDetector2', 'rb') as f:
-        edgeDetector1 = pickle.load(f)
+    im = cv2.imread("/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/testframe.jpg")
 
-    edgeDetector1.reconstruct_image()
-    #visual_Test(edgeDetector1)
+    # load intrensic camera parameters. Used to undistort images from cameras
+    with open('cam1Params', 'rb') as f:
+        cam1_params = pickle.load(f)
+    with open('cam2Params', 'rb') as f:
+        cam2_params = pickle.load(f)
+
+    image_preprocessor = ImagePreprocessor([cam1_params, cam2_params], (1000, 1000))
+    im1, im2 = image_preprocessor.undistort_and_crop(im)
+
+    # initialize mapcoords
+    mc1 = MapCoords(im1, 60, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam1",
+                         debug=True)
+    visual_Test(mc1)

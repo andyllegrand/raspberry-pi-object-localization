@@ -12,8 +12,6 @@ def find_min_max_areas(radius, picture_res, cam_pos, lev_top, faceplate_height, 
 
     # top of lev:
 
-
-
     return 0,0
 
 class SizeFilter:
@@ -43,4 +41,6 @@ class CircularityFilter:
                 if self.circularity_thresh < circularity:
                     passed.append(contour)
         return passed
+
+
 

@@ -1,22 +1,26 @@
 import cv2
 import numpy as np
 
+im1_crop = np.array([[1550, 1005], [2900, 994], [1400, 2430], [3100, 2450]])
+im2_crop = np.array([[837, 580], [3500, 630], [3200, 2850], [1100, 2800]])
 
 class ImagePreprocessor:
-    def __init__(self, cam_params, desired_res, im1crop, im2crop):
+    def __init__(self, cam_params, desired_res):
         self.cam_params = cam_params
         self.desired_res = desired_res
-        self.im1crop = im1crop
-        self.im2crop = im2crop
 
     # actually returns rectangular crop, can modify in the future to return an actual 4 point crop
     @staticmethod
     def four_point_crop(im, points):
+        #print(points[0:4, 0])
+        #print(points[0:4, 1])
         # find smallest x, y and greatest x,y
-        min_x = np.amin(points[:0])
-        max_x = np.amax(points[:0])
-        min_y = np.amin[points[:1]]
-        max_y = np.amax[points[:1]]
+        min_x = np.amin(points[0:4, 0])
+        max_x = np.amax(points[0:4, 0])
+        min_y = np.amin(points[0:4, 1])
+        max_y = np.amax(points[0:4, 1])
+
+        #print(str(min_x) + " " + str(max_x) + " " + str(min_y) + " " + str(max_y))
 
         # create rectangular image
         cropped_im = im[min_y:max_y, min_x:max_x]
@@ -29,6 +33,10 @@ class ImagePreprocessor:
         middle = int(width / 2)
         im1 = im[:, :middle]
         im2 = im[:, middle:]
+
+        # TODO VERY HACKY FIX FIGURE THIS OUT
+        height = 3040
+        width = 4056
 
         # images compressed along x-axis. Stretch to undo this
         im1 = cv2.resize(im1, (width, height))
@@ -60,8 +68,8 @@ class ImagePreprocessor:
         im1, im2 = self.undistort(im)
 
         # perform crops
-        im1 = ImagePreprocessor.four_point_crop(im1, self.im1crop)
-        im2 = ImagePreprocessor.four_point_crop(im2, self.im2crop)
+        im1 = ImagePreprocessor.four_point_crop(im1, im1_crop)
+        im2 = ImagePreprocessor.four_point_crop(im2, im2_crop)
 
         # resize to desired size
         im1 = cv2.resize(im1, self.desired_res)
@@ -76,14 +84,19 @@ if __name__ == '__main__':
     with open('cam2Params', 'rb') as f:
         cam2_params = pickle.load(f)
 
-    #cam2_params = cam1_params
+    image_pre = ImagePreprocessor([cam1_params, cam2_params], (1000, 1000))
 
-    print("starting cameras...")
-    camera = ImagePreprocessor([cam1_params, cam2_params], 1)
+    # get first frame from video
+    cap = cv2.VideoCapture('/Users/andylegrand/PycharmProjects/objloc_ras_pi/test.mp4')
 
-    im1, im2 = camera.take_pic()
+    # cycle 1 second
+    for i in range(30): cap.read()
+
+    ret, frame = cap.read()
+
+    im1, im2 = image_pre.undistort_and_crop(frame)
     print(str(im1.shape))
-    cv2.imwrite("/home/pi/piObjLocSync/output/object1.jpg", im1)
-    cv2.imwrite("/home/pi/piObjLocSync/output/object2.jpg", im2)
+    cv2.imwrite("/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/object1.jpg", im1)
+    cv2.imwrite("/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/object2.jpg", im2)
     print("done")
 
