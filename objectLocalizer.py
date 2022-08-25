@@ -75,7 +75,7 @@ class ObjectLocalizer:
         return False
 
     @staticmethod
-    # closer to z = 0 threshold should be greater because further from faceplate. Use similar triangles to find ajusted thresh
+    # Not totally sure if this works
     def distance_thresh(obj_point, faceplate_point, cam_point, thresh_const):
         faceplate_distance = ObjectLocalizer.distance3d(cam_point, faceplate_point)
         obj_distance = ObjectLocalizer.distance3d(cam_point, obj_point)
@@ -201,8 +201,8 @@ class ObjectLocalizer:
             for im1_cont_center in im1_cont_centers:
                 for im2_cont_center in im2_cont_centers:
                     p1, p2 = ObjectLocalizer.closest_points_on_skew_lines(cam1Position, im1_cont_center, cam2Position, im2_cont_center)
-                    # error1 = ObjectLocalizer.distance_thresh(p1, im1_cont_center, cam1Position, 3)
-                    # error2 = ObjectLocalizer.distance_thresh(p2, im2_cont_center, cam2Position, 3)
+                    error1 = ObjectLocalizer.distance_thresh(p1, im1_cont_center, cam1Position, 3)
+                    error2 = ObjectLocalizer.distance_thresh(p2, im2_cont_center, cam2Position, 3)
                     distance = ObjectLocalizer.distance3d(p1, p2)
                     midpoint = (p1 + p2) / 2
 
@@ -212,7 +212,7 @@ class ObjectLocalizer:
                         if distance < min_dist:
                             min_dist = distance
 
-                    if 3 > distance:  # and ObjectLocalizer.within_boundaries(midpoint):
+                    if error1 + error2 > distance:  # and ObjectLocalizer.within_boundaries(midpoint):
                         return midpoint
             if self.debug:
                 with open("/Users/andylegrand/PycharmProjects/objloc_ras_pi/thresh/" + str(counter) + '.txt', 'a') as f:

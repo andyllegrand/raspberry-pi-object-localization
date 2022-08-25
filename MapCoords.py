@@ -447,6 +447,5 @@ if __name__ == '__main__':
     im1, im2 = image_preprocessor.undistort_and_crop(im)
 
     # initialize mapcoords
-    mc1 = MapCoords(im1, 60, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam1",
-                         debug=True)
+    mc1 = MapCoords(im1, 60, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam1", debug=True)
     visual_Test(mc1)
