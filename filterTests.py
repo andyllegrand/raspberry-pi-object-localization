@@ -12,14 +12,14 @@ with open('cam1Params', 'rb') as f:
 with open('cam2Params', 'rb') as f:
     cam2_params = pickle.load(f)
 
-frame = cv2.imread("/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/testframe.jpg")
+frame = cv2.imread("/test_images/testframe.jpg")
 
 image_preprocessor = ImagePreprocessor([cam1_params, cam2_params], (1000,1000))
 im1, im2 = image_preprocessor.undistort_and_crop(frame)
 cv2.imwrite("/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam1/undistort.jpg", im1)
 cv2.imwrite("/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam2/undistort.jpg", im2)
 
-test_im = cv2.imread("/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/testframe.jpg")
+test_im = cv2.imread("/test_images/testframe.jpg")
 blur = cv2.medianBlur(test_im, 5)
 gs = cv2.cvtColor(blur, cv2.COLOR_BGR2GRAY)
 

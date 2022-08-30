@@ -13,25 +13,38 @@ class MapCoords:
     GREEN_BLUE_THRESH = 60
 
     def print_debug(self, message):
-        if self.debug:
+        if self.print_messages:
             print(message)
 
-    def __init__(self, image, cm_distance, outputDir, debug = True):
-        self.debug = debug
+    def write_image(self, path, image):
+        if self.output_dir is not None:
+            cv2.imwrite(self.output_dir + path, image)
+
+    def __init__(self, image, cm_distance, square_side_length, outputDir=None, print_messages=False, show_cropped_fiducials=False):
+        self.print_messages = print_messages
+        self.show_cropped_fiducials = show_cropped_fiducials
         self.image = image
         self.cm_distance = cm_distance
         self.output_dir = outputDir
-        inner_corners = []
+        src_points = []
+        dst_points = []
 
         # get upper left and lower right coordinates of quadrants
         h, w, c = np.shape(image)
         center = [int(h / 2), int(w / 2)]
 
-        expected_positions_left = [[0,0], [center[0], 0], [center[1], center[0]], [0, center[0]]]
-        expected_positions_right = [[center[0], center[1]], [h, center[1]], [h, w], [center[1],w]]
+        expected_positions_left = [[0, 0], [center[0], 0], [center[1], center[0]], [0, center[0]]]
+        expected_positions_right = [[center[0], center[1]], [h, center[1]], [h, w], [center[1], w]]
 
-        print(expected_positions_left)
-        print(expected_positions_right)
+        self.print_debug(expected_positions_left)
+        self.print_debug(expected_positions_right)
+
+        # constants for building dst points
+        offset_distance = cm_distance - square_side_length
+        fiducial_top_left_points = [[0, 0], [0, offset_distance], [offset_distance, offset_distance],
+                                    [offset_distance, 0]]
+        fiducial_offsets = [[0, 0], [0, square_side_length], [square_side_length, square_side_length],
+                            [square_side_length, 0]]
 
         # crop each fiducial, identify all 4 corners, then save corner closest to center of image
         for i in range(4):
@@ -40,7 +53,7 @@ class MapCoords:
             mask = MapCoords.preprocess_image(cropped_fiducial)
             edges = MapCoords.find_outline(mask)
 
-            if self.debug:
+            if self.show_cropped_fiducials:
                 cv2.imshow("cf", cropped_fiducial)
                 cv2.imshow("mask", mask)
                 cv2.imshow("edges", edges)
@@ -53,26 +66,32 @@ class MapCoords:
                     cv2.imshow("cf", cropped_fiducial)
                     cv2.waitKey(0)
                     exit()
-                lines = MapCoords.draw_vertical_horizontal_lines(edges, thresh, original_image=cropped_fiducial, outputPath=self.output_dir+"/fiducialHoughLines"+str(i)+ "thresh" + str(thresh)+".jpg")
+
+                lines, line_img = MapCoords.draw_vertical_horizontal_lines(edges, thresh, cropped_fiducial)
+                self.write_image("/fiducialHoughLines" + str(i) + "thresh" + str(thresh) + ".jpg", line_img)
                 corners = MapCoords.find_and_group_intersections(lines)
                 if len(corners) == 4:
                     break
                 thresh -= 1
 
             # plot corners
-            MapCoords.plot_corners(cropped_fiducial, corners, self.output_dir + "/allCorners" + str(i) + ".jpg")
+            self.write_image("/4Corners" + str(i) + ".jpg", MapCoords.plot_corners(cropped_fiducial, corners))
 
-            # find inner corner
+            # order points
+            # 1     2
+            # 4     3
             MapCoords.sort_points(corners)
-            inner_corner = corners[(i+2) % 4]
-            offset_inner_corner = [inner_corner[0] + expected_positions_left[i][0], inner_corner[1] + expected_positions_left[i][1]]
-            inner_corners.append(offset_inner_corner)
+
+            # offset all coordinates to full image position and add to src points, also build dst_points array
+            for c in range(4):
+                src_points.append([corners[c][0] + expected_positions_left[i][0], corners[c][1] + expected_positions_left[i][1]])
+                dst_points.append([fiducial_top_left_points[i][0] + fiducial_offsets[c][0], fiducial_top_left_points[i][1] + fiducial_offsets[c][1]])
             self.print_debug("done")
 
         # print images
-        MapCoords.plot_corners(image, inner_corners, self.output_dir+"/innerCorners.jpg")
+        self.write_image("/allCorners.jpg", MapCoords.plot_corners(image, src_points))
         # find homography
-        self.homography_transform = MapCoords.get_homography_transform(inner_corners, cm_distance)[0]
+        self.homography_transform = cv2.findHomography(np.array(src_points), np.array(dst_points))[0]
 
     def get_real_coord(self, rx, ry):
         return MapCoords.warp_point(self.homography_transform, rx, ry) - np.array([30,30]) # subtract 30 to set 0,0 to center
@@ -81,11 +100,6 @@ class MapCoords:
         return self.image
 
     def reconstruct_image(self):
-        print("here")
-        print(self.get_real_coord(540, 420))
-
-        print(self.image.shape)
-
         scale = 10
         output = np.ones([self.cm_distance*scale+5, self.cm_distance*scale+5, 3])
         ySize, xSize, channels = self.image.shape
@@ -147,28 +161,26 @@ class MapCoords:
 
     # have to change thresh for each resolution scalar
     @staticmethod
-    def draw_vertical_horizontal_lines(edge_image, thresh, k=2, original_image = None, outputPath = None, **kwargs):
+    def draw_vertical_horizontal_lines(edge_image, thresh, original_image, k=2, **kwargs):
         rho, theta = 1, np.pi / 180
         lines = cv2.HoughLines(edge_image, rho, theta, thresh)
         if lines is None:
             print("no lines")
             return None
-        if original_image is not None:
-            img = original_image.copy()
-            for line in lines:
-                rho, theta = line[0]
-                a = np.cos(theta)
-                b = np.sin(theta)
-                x0 = a * rho
-                y0 = b * rho
-                x1 = int(x0 + 10000 * (-b))
-                y1 = int(y0 + 10000 * (a))
-                x2 = int(x0 - 10000 * (-b))
-                y2 = int(y0 - 10000 * (a))
 
-                cv2.line(img, (x1, y1), (x2, y2), (255, 0, 0), 2)
+        img = original_image.copy()
+        for line in lines:
+            rho, theta = line[0]
+            a = np.cos(theta)
+            b = np.sin(theta)
+            x0 = a * rho
+            y0 = b * rho
+            x1 = int(x0 + 10000 * (-b))
+            y1 = int(y0 + 10000 * (a))
+            x2 = int(x0 - 10000 * (-b))
+            y2 = int(y0 - 10000 * (a))
 
-            cv2.imwrite(outputPath, img)
+            cv2.line(img, (x1, y1), (x2, y2), (255, 0, 0), 2)
 
         # Set parameters
         default_criteria_type = cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER
@@ -190,7 +202,8 @@ class MapCoords:
         for i, line in enumerate(lines):
             segmented[labels[i]].append(line)
         segmented = list(segmented.values())
-        return segmented
+
+        return segmented, img
 
     @staticmethod
     def find_and_group_intersections(lines):
@@ -257,13 +270,13 @@ class MapCoords:
         return [int(np.round(x0)), int(np.round(y0))]
 
     @staticmethod
-    def plot_corners(img, points, output_path):
+    def plot_corners(img, points):
         copy = img.copy()
         for point in points:
             copy = cv2.circle(copy, (point[0], point[1]), radius=5, color=(255, 0, 0), thickness=-1)
             cv2.putText(copy, "(x,y): " + str(point[0]) + ", " + str(point[1]),
                         (point[0], point[1] + 28), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
-        cv2.imwrite(output_path, copy)
+        return copy
 
     @staticmethod
     def calc_distance(point1, point2):
@@ -290,8 +303,6 @@ class MapCoords:
         # break into 2 arrays then sort by x
         points[0:2] = sorted(points[0:2])
         points[2:4] = sorted(points[2:4], reverse=True)
-
-        print(points)
 
     @staticmethod
     def average_points(points):
@@ -336,7 +347,6 @@ class MapCoords:
 
         return transform
 
-
     @staticmethod
     def fill_position_matrix_tilted(image, reference_points, distance):
         height, width, channels = image.shape
@@ -373,6 +383,7 @@ class MapCoords:
                 real_x = distance * MapCoords.calc_distance(pixel, left_point) / lr_distance
                 position_matrix[pixel[0], pixel[1]] = [real_x, real_y]
         return position_matrix
+
 
 # testing class. Shows image then user can click on any pixel to get real world coordinates
 class visual_Test:
@@ -432,10 +443,11 @@ class visual_Test:
                         (255, 255, 0), 2)
             cv2.imshow('image', self.img)
 
+
 if __name__ == '__main__':
     import pickle
 
-    im = cv2.imread("/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/testframe.jpg")
+    im = cv2.imread("/test_images/testframe.jpg")
 
     # load intrensic camera parameters. Used to undistort images from cameras
     with open('cam1Params', 'rb') as f:
@@ -447,5 +459,5 @@ if __name__ == '__main__':
     im1, im2 = image_preprocessor.undistort_and_crop(im)
 
     # initialize mapcoords
-    mc1 = MapCoords(im1, 60, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam1", debug=True)
+    mc1 = MapCoords(im1, 60, 5, outputDir="/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam1", show_cropped_fiducials=True)
     visual_Test(mc1)

@@ -1,8 +1,10 @@
+import glob
 import math
 import cv2
 import numpy as np
 import pickle
 
+import dir_reset
 from imagePreprocessor import ImagePreprocessor
 from dummyCamera import DummyCamera
 from MapCoords import MapCoords
@@ -22,8 +24,11 @@ cam2Position = np.array([0, -48, 142])
 # distance between fiducials in mm
 square_distance = 60
 
+# length of side of square
+square_side_length = 5
+
 # distance face plate is above z = 0
-facePlateHeight = 42
+facePlateHeight = 45.3
 
 # radius of lev in mm
 lev_radius = 30
@@ -36,6 +41,10 @@ obj_max_size = 4000
 
 obj_circularity = .5
 
+# CRITICAL THAT THIS POINTS TO OUTPUT DIRECTORY. DIRECTORY MAY BE WIPED!!!!
+output_dir = "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output"
+assert output_dir.split("/")[-1] == "output"
+
 class ObjectLocalizer:
 
     @staticmethod
@@ -43,7 +52,6 @@ class ObjectLocalizer:
         area = SizeFilter(obj_min_size, obj_max_size)
         circularity = CircularityFilter(obj_circularity)
         return [circularity, area]
-        # return []
 
     # following 2 methods from https://stackoverflow.com/questions/55641425/check-if-two-contours-intersect
     @staticmethod
@@ -75,7 +83,6 @@ class ObjectLocalizer:
         return False
 
     @staticmethod
-    # Not totally sure if this works
     def distance_thresh(obj_point, faceplate_point, cam_point, thresh_const):
         faceplate_distance = ObjectLocalizer.distance3d(cam_point, faceplate_point)
         obj_distance = ObjectLocalizer.distance3d(cam_point, obj_point)
@@ -119,9 +126,8 @@ class ObjectLocalizer:
         cY = int(M["m01"] / M["m00"])
         return cX, cY
 
-    # todo integrate this filter better
     @staticmethod
-    def get_contour_centers_real(contours, mapcoords, zval):
+    def get_valid_contour_centers_real(contours, mapcoords, zval):
         centers = []
         for contour in contours:
             px, py = ObjectLocalizer.get_contour_center(contour)
@@ -159,6 +165,8 @@ class ObjectLocalizer:
         im1_gray = cv2.cvtColor(im1_blur, cv2.COLOR_BGR2GRAY)
         im2_gray = cv2.cvtColor(im2_blur, cv2.COLOR_BGR2GRAY)
 
+        thresh_path = thresh_path = output_dir + "/thresh"
+
         # Loop through threshold value until object is found
         counter = self.min_thresh
         while counter <= self.max_thresh:
@@ -169,29 +177,29 @@ class ObjectLocalizer:
             contours_im2 = ObjectLocalizer.get_contours_and_apply_filters(thresh_im2, self.filters)
 
             # get mm coordinates of contours
-            im1_cont_centers = ObjectLocalizer.get_contour_centers_real(contours_im1, self.mc1, facePlateHeight)
-            im2_cont_centers = ObjectLocalizer.get_contour_centers_real(contours_im2, self.mc2, facePlateHeight)
+            im1_cont_centers = ObjectLocalizer.get_valid_contour_centers_real(contours_im1, self.mc1, facePlateHeight)
+            im2_cont_centers = ObjectLocalizer.get_valid_contour_centers_real(contours_im2, self.mc2, facePlateHeight)
 
             # todo draw centers as well
 
             if self.debug:
+                dir_reset.reset_directory(thresh_path)
+
                 if len(contours_im1) > 0:
                     im1_copy = np.copy(im1)
                     for c in range(len(contours_im1)):
                         cv2.drawContours(im1_copy, [contours_im1[c]], 0, (0, 0, 255), 3)
 
-                    cv2.imwrite("/Users/andylegrand/PycharmProjects/objloc_ras_pi/thresh/" + str(counter) + "cam1.jpg",
-                                im1_copy)
+                    cv2.imwrite(thresh_path + "/" + str(counter) + "cam1.jpg", im1_copy)
 
                 if len(contours_im2) > 0:
                     im2_copy = np.copy(im2)
                     for c in range(len(contours_im2)):
                         cv2.drawContours(im2_copy, [contours_im2[c]], 0, (0, 0, 255), 3)
 
-                    cv2.imwrite("/Users/andylegrand/PycharmProjects/objloc_ras_pi/thresh/" + str(counter) + "cam2.jpg",
-                                im2_copy)
+                    cv2.imwrite(thresh_path + "/" + str(counter) + "cam2.jpg", im2_copy)
 
-                with open("/Users/andylegrand/PycharmProjects/objloc_ras_pi/thresh/" + str(counter) + '.txt', 'w') as f:
+                with open(thresh_path + "/" + str(counter) + '.txt', 'w') as f:
                     f.write("contours in im1" + str(im1_cont_centers))
                     f.write("contours in im2" + str(im2_cont_centers))
 
@@ -207,15 +215,15 @@ class ObjectLocalizer:
                     midpoint = (p1 + p2) / 2
 
                     if self.debug:
-                        with open("/Users/andylegrand/PycharmProjects/objloc_ras_pi/thresh/" + str(counter) + '.txt', 'a') as f:
+                        with open(thresh_path + "/" + str(counter) + '.txt', 'a') as f:
                             f.write("\n"+str(im1_cont_center) + " " + str(im2_cont_center) + " " + str(midpoint) + " " + str(distance))
                         if distance < min_dist:
                             min_dist = distance
 
-                    if error1 + error2 > distance:  # and ObjectLocalizer.within_boundaries(midpoint):
+                    if error1 + error2 > distance: #and ObjectLocalizer.within_boundaries(midpoint):
                         return midpoint
             if self.debug:
-                with open("/Users/andylegrand/PycharmProjects/objloc_ras_pi/thresh/" + str(counter) + '.txt', 'a') as f:
+                with open(thresh_path + "/" + str(counter) + '.txt', 'a') as f:
                     f.write("\nmindist: " + str(min_dist))
 
             counter += self.step
@@ -238,15 +246,17 @@ class ObjectLocalizer:
         self.image_preprocessor = ImagePreprocessor([cam1_params, cam2_params], (1000, 1000))
         im1, im2 = self.image_preprocessor.undistort_and_crop(im)
 
-        # initialize mapcoords
-        self.mc1 = MapCoords(im1, square_distance, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam1", debug=False)
-        self.mc2 = MapCoords(im2, square_distance, "/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam2", debug=False)
+        # reset output directory
+        dir_reset.reset_directory(output_dir)
 
+        # initialize mapcoords
+        self.mc1 = MapCoords(im1, square_distance, square_side_length, outputDir=output_dir+"/cam1", print_messages=True)
+        self.mc2 = MapCoords(im2, square_distance, square_side_length, outputDir=output_dir+"/cam2", print_messages=True)
 
 # debug test
 def debug_test():
-    frame = cv2.imread("/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/testframe.jpg")
-    obj_loc = ObjectLocalizer(frame, 60, 150, 5, debug=False)
+    frame = cv2.imread("/Users/andylegrand/PycharmProjects/objloc_ras_pi/test_images/testframe.jpg")
+    obj_loc = ObjectLocalizer(frame, 60, 150, 5, debug=True)
 
     coord = obj_loc.localize_object(frame)
     print(coord)
@@ -298,5 +308,6 @@ def demo():
         cv2.waitKey(1)
 
 if __name__ == '__main__':
-    demo()
+    # demo()
+    debug_test()
 
