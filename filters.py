@@ -2,17 +2,9 @@ import math
 
 import cv2
 
-# use similar triangles to find min and max pixel areas of object
-def find_min_max_areas(radius, picture_res, cam_pos, lev_top, faceplate_height, mm_distance):
-    allowed_deviation_factor = 0
+"""filters for contours. Each should have an apply method which inputs a list of contours and returns a list of 
+contours which passed the filter"""
 
-    # at faceplate height:
-    real_area_fp = mm_distance**2
-    full_res_fp = picture_res[0] * picture_res[1]
-
-    # top of lev:
-
-    return 0,0
 
 class SizeFilter:
     def __init__(self, min_val, max_val):
@@ -26,6 +18,7 @@ class SizeFilter:
             if self.min < area < self.max:
                 passed.append(contour)
         return passed
+
 
 class CircularityFilter:
     def __init__(self, circularity):

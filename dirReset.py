@@ -2,6 +2,7 @@ import os
 
 # be super careful with this!!
 def reset_directory(folder):
+    """erases all files inside directory and all subdirectories"""
     for filename in os.listdir(folder):
         file_path = os.path.join(folder, filename)
         try:
@@ -11,6 +12,3 @@ def reset_directory(folder):
                 reset_directory(file_path)
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
-
-
-reset_directory("/Users/andylegrand/PycharmProjects/objloc_ras_pi/output")

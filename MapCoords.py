@@ -9,42 +9,59 @@ from imagePreprocessor import ImagePreprocessor
 
 
 class MapCoords:
+    """
+    inputs an image, locates the fiducials, then can identify the real world location of each pixel in the image on a
+    2d plane. measurements are in mm and 0,0 is at the center of the 4 fiducials.
+    """
     RED_THRESH = 125
     GREEN_BLUE_THRESH = 60
 
     def print_debug(self, message):
+        """only print message if debug is enabled"""
         if self.print_messages:
             print(message)
 
     def write_image(self, path, image):
+        """only write image if debug is enabled"""
         if self.output_dir is not None:
             cv2.imwrite(self.output_dir + path, image)
 
-    def __init__(self, image, cm_distance, square_side_length, outputDir=None, print_messages=False, show_cropped_fiducials=False):
+    def __init__(self, image, square_distance, square_side_length, outputDir=None, print_messages=False,
+                 show_cropped_fiducials=False):
+        """
+        initialize new mapCoords object
+
+        :param image: reference image where fiducials are found
+        :param square_distance: distance between the top left corners of two adjacent fiducials
+        :param square_side_length: the side length of a fiducial square
+        :param outputDir: directory to write output images to. Set to None if no images should be written.
+        :param print_messages: set to true for debug print messages
+        :param show_cropped_fiducials: if set to true will the outline of each fiducial will be displayed during
+            initialization
+        """
         self.print_messages = print_messages
         self.show_cropped_fiducials = show_cropped_fiducials
         self.image = image
-        self.cm_distance = cm_distance
+        self.cm_distance = square_distance
         self.output_dir = outputDir
         src_points = []
         dst_points = []
 
-        # get upper left and lower right coordinates of quadrants
+        # constants for building dst points
+        offset_distance = square_distance - square_side_length
+        fiducial_top_left_points = [[0, 0], [0, offset_distance], [offset_distance, offset_distance],
+                                    [offset_distance, 0]]
+        fiducial_offsets = [[0, 0], [0, square_side_length], [square_side_length, square_side_length],
+                            [square_side_length, 0]]
+
+        # find upper left and lower right coordinates of each quadrant of the image
         h, w, c = np.shape(image)
         center = [int(h / 2), int(w / 2)]
-
         expected_positions_left = [[0, 0], [center[0], 0], [center[1], center[0]], [0, center[0]]]
         expected_positions_right = [[center[0], center[1]], [h, center[1]], [h, w], [center[1], w]]
 
         self.print_debug(expected_positions_left)
         self.print_debug(expected_positions_right)
-
-        # constants for building dst points
-        offset_distance = cm_distance - square_side_length
-        fiducial_top_left_points = [[0, 0], [0, offset_distance], [offset_distance, offset_distance],
-                                    [offset_distance, 0]]
-        fiducial_offsets = [[0, 0], [0, square_side_length], [square_side_length, square_side_length],
-                            [square_side_length, 0]]
 
         # crop each fiducial, identify all 4 corners, then save corner closest to center of image
         for i in range(4):
@@ -84,26 +101,42 @@ class MapCoords:
 
             # offset all coordinates to full image position and add to src points, also build dst_points array
             for c in range(4):
-                src_points.append([corners[c][0] + expected_positions_left[i][0], corners[c][1] + expected_positions_left[i][1]])
-                dst_points.append([fiducial_top_left_points[i][0] + fiducial_offsets[c][0], fiducial_top_left_points[i][1] + fiducial_offsets[c][1]])
+                src_points.append([corners[c][0] + expected_positions_left[i][0], corners[c][1] +
+                                   expected_positions_left[i][1]])
+                dst_points.append([fiducial_top_left_points[i][0] + fiducial_offsets[c][0],
+                                   fiducial_top_left_points[i][1] + fiducial_offsets[c][1]])
             self.print_debug("done")
 
-        # print images
+        # write image with all fiducial corners identified
         self.write_image("/allCorners.jpg", MapCoords.plot_corners(image, src_points))
         # find homography
         self.homography_transform = cv2.findHomography(np.array(src_points), np.array(dst_points))[0]
 
-    def get_real_coord(self, rx, ry):
-        return MapCoords.warp_point(self.homography_transform, rx, ry) - np.array([30,30]) # subtract 30 to set 0,0 to center
+    def get_real_coord(self, px, py):
+        """
+        returns real world coordinate of a given xy pixel value
+        :param px: pixel x value
+        :param py: pixel y value
+        :return: real world coordinate of pixel value
+        """
+        return MapCoords.apply_homography_transform(self.homography_transform, px, py) \
+               - np.array([self.cm_distance/2, self.cm_distance/2])  # subtract 30 to set 0,0 to center
 
     def get_image(self):
+        """
+        accessor method for reference image
+        :return: reference image used during initialization
+        """
         return self.image
 
     def reconstruct_image(self):
+        """
+        debugging method which reconstructs the reference image based on the real world coordinates of each pixel.
+        :return: Reconstructed image
+        """
         scale = 10
         output = np.ones([self.cm_distance*scale+5, self.cm_distance*scale+5, 3])
         ySize, xSize, channels = self.image.shape
-        print(str(xSize) + " " + str(ySize))
 
         for x in range(ySize):
             for y in range(xSize):
@@ -113,11 +146,13 @@ class MapCoords:
                     outputX = int(temp[0] * scale)-1
                     outputY = int(temp[1] * scale) - 1
                     output[outputY][outputX] = self.image[y][x]
-        print("writing image")
-        cv2.imwrite('/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/reim.jpg', output)
+
+        return output
 
     @staticmethod
     def preprocess_image(image):
+        # TODO rewrite this using hsv threshold
+        """blur and threshold image"""
         image_copy = np.copy(image)
 
         # apply blur
@@ -139,11 +174,19 @@ class MapCoords:
 
     @staticmethod
     def crop(img, point1, point2):
+        """
+        crops image
+        :param img: image to be cropped
+        :param point1: upper left point of crop (column,row)
+        :param point2: lower right point to crop (column,row)
+        :return: cropped image
+        """
         cropped_im = img[point1[1]:point2[1], point1[0]:point2[0]]
         return cropped_im
 
     @staticmethod
     def find_outline(img):
+        """find outlines on threshold image"""
         scale = 1
         delta = 0
         ddepth = cv2.CV_16S
@@ -162,6 +205,7 @@ class MapCoords:
     # have to change thresh for each resolution scalar
     @staticmethod
     def draw_vertical_horizontal_lines(edge_image, thresh, original_image, k=2, **kwargs):
+        """draw houghlines then sort into horizontal and vertical groups"""
         rho, theta = 1, np.pi / 180
         lines = cv2.HoughLines(edge_image, rho, theta, thresh)
         if lines is None:
@@ -207,6 +251,8 @@ class MapCoords:
 
     @staticmethod
     def find_and_group_intersections(lines):
+        """given grouped lines find all intersections between groups. Then average intersections which are close to
+            each other"""
         intersections = []
 
         # make sure that there are lines to work with
@@ -254,6 +300,7 @@ class MapCoords:
 
     @staticmethod
     def intersection(line1, line2):
+        """find intersection between 2 lines"""
         # Find intersection point of two lines from rho and theta
         # Solve:
         # x * cos(theta1) + y * sin(theta1) = r1
@@ -271,6 +318,7 @@ class MapCoords:
 
     @staticmethod
     def plot_corners(img, points):
+        """draw all points on image"""
         copy = img.copy()
         for point in points:
             copy = cv2.circle(copy, (point[0], point[1]), radius=5, color=(255, 0, 0), thickness=-1)
@@ -279,25 +327,12 @@ class MapCoords:
         return copy
 
     @staticmethod
-    def calc_distance(point1, point2):
-        return np.sqrt((point1[1]-point2[1]) ** 2 + (point1[0]-point2[0]) ** 2)
-
-    @staticmethod
-    def find_closest_corner(points, ref):
-        minDist = sys.float_info.max
-        closest_point = None
-        for point in points:
-            dist = MapCoords.calc_distance(ref, point)
-            if MapCoords.calc_distance(ref, point) < minDist:
-                closest_point = point
-                minDist = dist
-        return closest_point
-
-    # sorts in place
-    # 1     2
-    # 3     4
-    @staticmethod
     def sort_points(points):
+        """sort list of points in place in following order
+            1       2
+            4       3
+
+        """
         # sort by y
         points.sort(key=lambda row: (row[1]))
         # break into 2 arrays then sort by x
@@ -305,92 +340,26 @@ class MapCoords:
         points[2:4] = sorted(points[2:4], reverse=True)
 
     @staticmethod
-    def average_points(points):
-        total = [0,0]
-        for point in points:
-            total[0] += point[0]
-            total[1] += point[1]
-        return[total[0] / len(points), total[1] / len(points)]
-
-    @staticmethod
-    def eval_linear_equation(m, x, b):
-        return m*x+b
-
-    # Ax + By + C = 0
-    @staticmethod
-    def calc_distance_between_line_and_point(point, A, B, C):
-        return np.abs((point[0]*A+point[1]*B+C)/np.sqrt(A**2+B**2))
-
-    @staticmethod
-    def calc_slope(point1, point2):
-        return (point1[1] - point2[1]) / (point1[0] - point2[0])
-
-    @staticmethod
-    def calc_slope_y(point1, point2):
-        return (point1[0] - point2[0]) / (point1[1] - point2[1])
-
-    @staticmethod
-    def warp_point(M, x: int, y: int):
+    def apply_homography_transform(M, x: int, y: int):
+        """applies homography transform to 1 pixel"""
         d = M[2][0] * x + M[2][1] * y + M[2][2]
 
         return np.array(
             [(M[1, 0] * x + M[1, 1] * y + M[1, 2]) / d, (M[0, 0] * x + M[0, 1] * y + M[0, 2]) / d]
         )
 
-    @staticmethod
-    def get_homography_transform(reference_points, distance):
-        src_points = np.array(reference_points)
-        dst_points = np.array([[0,0],[0,distance],[distance,distance], [distance,0]])
 
-        # find constants with cv2 method
-        transform = cv2.findHomography(src_points, dst_points)
-
-        return transform
-
-    @staticmethod
-    def fill_position_matrix_tilted(image, reference_points, distance):
-        height, width, channels = image.shape
-        position_matrix = -1 * np.ones((width, height), dtype=object)
-
-        # get 4 inner corners
-        top_left = reference_points[0]
-        top_right = reference_points[1]
-        bottom_left = reference_points[2]
-        bottom_right = reference_points[3]
-
-        # calculate side equations (start at top bc y grows down)
-        left_m = MapCoords.calc_slope_y(top_left, bottom_left)
-        left_b = top_left[0]
-        right_m = MapCoords.calc_slope_y(top_right, bottom_right)
-        right_b = top_right[0]
-
-        # calculate top equation
-        top_m = MapCoords.calc_slope(top_left, top_right)
-        top_b = top_left[0]
-
-        vertical_distance = MapCoords.calc_distance(top_left, bottom_left)
-
-        for yc in range(bottom_left[1]-top_left[1]+1):
-            left_point = [MapCoords.eval_linear_equation(left_m, yc, left_b), yc + top_left[1]]
-            right_point = [MapCoords.eval_linear_equation(right_m, yc, right_b), yc + top_right[1]]
-
-            real_y = distance * MapCoords.calc_distance_between_line_and_point(left_point, top_m, -1,
-                top_left[1]) / vertical_distance
-
-            lr_distance = MapCoords.calc_distance(left_point, right_point)
-            for xc in range(int(right_point[0]-left_point[0]+1)):
-                pixel = [int(left_point[0] + xc), int(MapCoords.eval_linear_equation(top_m, xc, left_point[1]))]
-                real_x = distance * MapCoords.calc_distance(pixel, left_point) / lr_distance
-                position_matrix[pixel[0], pixel[1]] = [real_x, real_y]
-        return position_matrix
-
-
-# testing class. Shows image then user can click on any pixel to get real world coordinates
 class visual_Test:
-    def __init__(self, ed):
+    """
+    class for testing mapcoords.
+
+    Reference image of the mapcoords class is displayed, then the user can click any pixel to view its real world
+    coordinates.
+    """
+    def __init__(self, mc):
         # reading the image
-        self.img = ed.get_image()
-        self.ed = ed
+        self.img = mc.get_image()
+        self.ed = mc
 
         # displaying the image
         cv2.imshow('image', self.img)
@@ -405,9 +374,6 @@ class visual_Test:
         # close the window
         cv2.destroyAllWindows()
 
-
-    # function to display the coordinates of
-    # of the points clicked on the image
     def click_event(self, event, x, y, flags, params):
         print(str(x)+" "+str(y))
         # checking for left mouse clicks
@@ -443,13 +409,12 @@ class visual_Test:
                         (255, 255, 0), 2)
             cv2.imshow('image', self.img)
 
-
+# testing script which creates a mapcoords object, then runs the reconstruct_image and visual_test tests
 if __name__ == '__main__':
     import pickle
 
-    im = cv2.imread("/test_images/testframe.jpg")
+    im = cv2.imread("/Users/andylegrand/PycharmProjects/objloc_ras_pi/test_images/testframe.jpg")
 
-    # load intrensic camera parameters. Used to undistort images from cameras
     with open('cam1Params', 'rb') as f:
         cam1_params = pickle.load(f)
     with open('cam2Params', 'rb') as f:
@@ -458,6 +423,7 @@ if __name__ == '__main__':
     image_preprocessor = ImagePreprocessor([cam1_params, cam2_params], (1000, 1000))
     im1, im2 = image_preprocessor.undistort_and_crop(im)
 
-    # initialize mapcoords
+
     mc1 = MapCoords(im1, 60, 5, outputDir="/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam1", show_cropped_fiducials=True)
+
     visual_Test(mc1)
