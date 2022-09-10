@@ -1,5 +1,6 @@
 import os
 
+
 # be super careful with this!!
 def reset_directory(folder):
     """erases all files inside directory and all subdirectories"""

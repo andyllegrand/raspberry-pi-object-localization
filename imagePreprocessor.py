@@ -1,13 +1,14 @@
 import cv2
 import numpy as np
 
+# points which define crop to isolate image from background
 im_top_left = []
 im_bottom_right = []
 
 im1_crop = np.array([[1550, 1005], [2900, 994], [1400, 2430], [3100, 2450]])
 im2_crop = np.array([[837, 580], [3500, 630], [3200, 2850], [1100, 2800]])
 
-camera_resolution = (4056,3040)  # [columns, rows]
+camera_resolution = (4056, 3040)  # [columns, rows]
 
 
 class ImagePreprocessor:

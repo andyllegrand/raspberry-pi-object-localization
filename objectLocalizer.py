@@ -8,12 +8,6 @@ from imagePreprocessor import ImagePreprocessor
 from MapCoords import MapCoords
 from filters import SizeFilter, CircularityFilter
 
-scaled_res = (0, 0)
-
-# position of ends of camera lenses relative to origin (mm). #TODO read this from pickle
-cam1Position = np.array([0, 48, 142])
-cam2Position = np.array([0, -48, 142])
-
 # distance between fiducials in mm
 square_distance = 75
 
@@ -45,6 +39,10 @@ assert output_dir.split("/")[-1] == "output"
 
 
 class ObjectLocalizer:
+    """class for localizing object. thresholds to evaluate are defined upon initialization. Each subsequent call to
+    localize object inputs a raw frame from the camera setup defined in readme and returns the xyz coordinate of the
+    object in millimeters where the origin is at the bottom center point of the lev. Instructions for calibration can
+    be found in readme"""
 
     @staticmethod
     def draw_vectors_and_faceplate(points, lines):
@@ -295,15 +293,15 @@ class ObjectLocalizer:
         cv2.imshow("contour2_im", contour2_im)
         cv2.waitKey(0)
 
-        fp1 = ObjectLocalizer.get_focal_point(calibration_objects, im1_contour_centers)
-        fp2 = ObjectLocalizer.get_focal_point(calibration_objects, im2_contour_centers)
+        self.cam1fp = ObjectLocalizer.get_focal_point(calibration_objects, im1_contour_centers)
+        self.cam2fp = ObjectLocalizer.get_focal_point(calibration_objects, im2_contour_centers)
 
         # pickle
         with open('cam1fp', 'wb') as f:
-            pickle.dump(fp1, f)
+            pickle.dump(self.cam1fp, f)
 
         with open('cam2fp', 'wb') as f:
-            pickle.dump(fp2, f)
+            pickle.dump(self.cam2fp, f)
 
         print("calibration finished")
 
@@ -339,15 +337,17 @@ class ObjectLocalizer:
             # check if any contours are in range of each other
             for im1_cont_center in im1_contour_centers:
                 for im2_cont_center in im2_contour_centers:
-                    p1, p2 = ObjectLocalizer.closest_points_on_skew_lines(cam1Position, im1_cont_center, cam2Position, im2_cont_center)
-                    error1 = ObjectLocalizer.distance_thresh(p1, im1_cont_center, cam1Position, 3)
-                    error2 = ObjectLocalizer.distance_thresh(p2, im2_cont_center, cam2Position, 3)
+                    p1, p2 = ObjectLocalizer.closest_points_on_skew_lines(self.cam1fp, im1_cont_center,
+                                                                          self.cam2fp, im2_cont_center)
+                    error1 = ObjectLocalizer.distance_thresh(p1, im1_cont_center, self.cam1fp, 3)
+                    error2 = ObjectLocalizer.distance_thresh(p2, im2_cont_center, self.cam2fp, 3)
                     distance = ObjectLocalizer.distance3d(p1, p2)
                     midpoint = (p1 + p2) / 2
 
                     if error1 + error2 > distance and ObjectLocalizer.within_boundaries(midpoint):
                         if self.debug:
-                            ObjectLocalizer.draw_vectors_and_faceplate([im1_cont_center, im2_cont_center, midpoint], [[cam1Position, im1_cont_center], [cam2Position, im2_cont_center]])
+                            ObjectLocalizer.draw_vectors_and_faceplate([im1_cont_center, im2_cont_center, midpoint],
+                                                    [[self.cam1fp, im1_cont_center], [self.cam2fp, im2_cont_center]])
                         return midpoint
 
             counter += self.step
@@ -369,6 +369,12 @@ class ObjectLocalizer:
         self.debug = debug
 
         self.filters = ObjectLocalizer.create_filters()
+
+        # read in camera focal points
+        with open('cam1Fp', 'rb') as f:
+            self.cam1fp = pickle.load(f)
+        with open('cam2Fp', 'rb') as f:
+            self.cam2fp = pickle.load(f)
 
         # load intrensic camera parameters. Used to undistort images from cameras
         with open('cam1Params', 'rb') as f:
@@ -398,7 +404,8 @@ def debug_test(frame):
 
 # demo
 def demo():
-    cap = cv2.VideoCapture('/Users/andylegrand/PycharmProjects/objloc_ras_pi/cardboardbackground.mp4')
+    cap = cv2.VideoCapture('/Users/andylegrand/PycharmProjects/objloc_ras_pi/cardboardbackground.mp4') # run on stored video
+    #cap = cv2.VideoCapture(0) # run of webcam 0
     ret, frame = cap.read()
 
     obj_loc = ObjectLocalizer(frame, 60, 150, 5, debug=False)
@@ -442,5 +449,5 @@ def demo():
         cv2.waitKey(1)
 
 if __name__ == '__main__':
-    # demo()
-    debug_test(18)
+    demo()
+    # debug_test(18)

@@ -13,8 +13,6 @@ class MapCoords:
     inputs an image, locates the fiducials, then can identify the real world location of each pixel in the image on a
     2d plane. measurements are in mm and 0,0 is at the center of the 4 fiducials.
     """
-    RED_THRESH = 125
-    GREEN_BLUE_THRESH = 60
 
     def print_debug(self, message):
         """only print message if debug is enabled"""
@@ -36,7 +34,7 @@ class MapCoords:
         :param square_side_length: the side length of a fiducial square
         :param outputDir: directory to write output images to. Set to None if no images should be written.
         :param print_messages: set to true for debug print messages
-        :param show_cropped_fiducials: if set to true will the outline of each fiducial will be displayed during
+        :param show_cropped_fiducials: if set to true show the outline of each fiducial. Displayed during
             initialization
         """
         self.print_messages = print_messages
@@ -44,11 +42,12 @@ class MapCoords:
         self.image = image
         self.cm_distance = square_distance
         self.output_dir = outputDir
+        self.square_side_length = square_side_length
         src_points = []
         dst_points = []
 
         # constants for building dst points
-        offset_distance = square_distance - square_side_length
+        offset_distance = square_distance
         fiducial_top_left_points = [[0, 0], [0, offset_distance], [offset_distance, offset_distance],
                                     [offset_distance, 0]]
         fiducial_offsets = [[0, 0], [0, square_side_length], [square_side_length, square_side_length],
@@ -120,7 +119,8 @@ class MapCoords:
         :return: real world coordinate of pixel value
         """
         return MapCoords.apply_homography_transform(self.homography_transform, px, py) \
-               - np.array([self.cm_distance/2, self.cm_distance/2])  # subtract 30 to set 0,0 to center
+               - np.array([(self.cm_distance+self.square_side_length)/2, (self.cm_distance+self.square_side_length)/2])
+        # subtract 30 to set 0,0 to center
 
     def get_image(self):
         """
@@ -151,26 +151,19 @@ class MapCoords:
 
     @staticmethod
     def preprocess_image(image):
-        # TODO rewrite this using hsv threshold
         """blur and threshold image"""
         image_copy = np.copy(image)
 
         # apply blur
         image_copy = cv2.medianBlur(image_copy, 5)
 
-        # split into BGR
-        B, G, R = cv2.split(image_copy)
+        # Convert to HSV
+        img_hsv = cv2.cvtColor(image_copy, cv2.COLOR_BGR2HSV)
 
-        # filter out red squares by looking for high red and low green and blue
-        ret, B = cv2.threshold(B, MapCoords.GREEN_BLUE_THRESH, 80, cv2.THRESH_BINARY_INV)
-        ret, G = cv2.threshold(G, MapCoords.GREEN_BLUE_THRESH, 80, cv2.THRESH_BINARY_INV)
-        ret, R = cv2.threshold(R, MapCoords.RED_THRESH, 80, cv2.THRESH_BINARY)
+        # Threshold (have to threshold twice and combine because red hue value wraps)
+        thresh = cv2.inRange(img_hsv, (0, 200, 50), (10, 255, 255)) + cv2.inRange(img_hsv, (170, 200, 50), (180, 255, 255))
 
-        # must pass threshold in all color channels
-        combined = B + G + R
-        ret, combined = cv2.threshold(combined, 200, 255, cv2.THRESH_BINARY)
-
-        return combined
+        return thresh
 
     @staticmethod
     def crop(img, point1, point2):

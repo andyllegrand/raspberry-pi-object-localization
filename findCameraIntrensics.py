@@ -54,12 +54,14 @@ while True:
     im1, im2 = ImagePreprocessor.get_camera_images(img)
 
     if add_image(im1, objpointsCam1, imgpointsCam1):
-        cv.imwrite(cam1_output_dir+"img"+str(cam1_num)+".jpg", im1)
         cam1_num += 1
+        print("works with cam1. " + str(cam1_num) + " images captured")
+        cv.imwrite(cam1_output_dir+"img"+str(cam1_num)+".jpg", im1)
 
     if add_image(im2, objpointsCam2, imgpointsCam2):
-        cv.imwrite(cam1_output_dir+"img"+str(cam2_num)+".jpg", im2)
         cam2_num += 1
+        print("works with cam2. ")
+        cv.imwrite(cam1_output_dir+"img"+str(cam2_num)+".jpg", im2)
 
 
 ret1, mtx1, dist1, rvecs1, tvecs1 = cv.calibrateCamera\
