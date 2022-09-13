@@ -11,7 +11,8 @@ from imagePreprocessor import ImagePreprocessor
 class MapCoords:
     """
     inputs an image, locates the fiducials, then can identify the real world location of each pixel in the image on a
-    2d plane. measurements are in mm and 0,0 is at the center of the 4 fiducials.
+    2d plane. measurements are in mm and 0,0 is at the center of the 4 fiducials. It is assumed that the position of the
+     camera relative to the faceplate remains static thus fiducial detection is only run one time
     """
 
     def print_debug(self, message):
@@ -27,7 +28,7 @@ class MapCoords:
     def __init__(self, image, square_distance, square_side_length, outputDir=None, print_messages=False,
                  show_cropped_fiducials=False):
         """
-        initialize new mapCoords object
+        initialize new mapCoords object.
 
         :param image: reference image where fiducials are found
         :param square_distance: distance between the top left corners of two adjacent fiducials
@@ -120,7 +121,7 @@ class MapCoords:
         """
         return MapCoords.apply_homography_transform(self.homography_transform, px, py) \
                - np.array([(self.cm_distance+self.square_side_length)/2, (self.cm_distance+self.square_side_length)/2])
-        # subtract 30 to set 0,0 to center
+        # subtract half of total side length to place 0,0 in the center
 
     def get_image(self):
         """
@@ -418,5 +419,5 @@ if __name__ == '__main__':
 
 
     mc1 = MapCoords(im1, 60, 5, outputDir="/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/cam1", show_cropped_fiducials=True)
-
+    cv2.imwrite(mc1.output_dir+"/recon.jpg",mc1.reconstruct_image())
     visual_Test(mc1)

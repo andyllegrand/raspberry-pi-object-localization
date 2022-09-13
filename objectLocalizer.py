@@ -449,5 +449,5 @@ def demo():
         cv2.waitKey(1)
 
 if __name__ == '__main__':
-    demo()
-    # debug_test(18)
+    # demo()
+    debug_test(18)

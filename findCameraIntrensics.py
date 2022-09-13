@@ -4,6 +4,10 @@ import cv2 as cv
 import pickle
 from imagePreprocessor import ImagePreprocessor
 
+"""utility code for getting camera intrinsics. Can read from directory full of preprocessed images or take and 
+process pictures from live input"""
+
+use_camera_input = False  # set to true is using live camera input, False if using dir
 camera_input = 0
 cap = cv.VideoCapture(camera_input)
 
@@ -28,7 +32,7 @@ def add_image(img, objpoints, imgpoints):
         cv.imshow('img', img)
         cv.waitKey(500)
     else:
-        print("removed")
+        print("does not work")
     return ret
 
 # termination criteria
@@ -45,24 +49,44 @@ imgpointsCam1 = [] # 2d points in image plane.
 objpointsCam2 = [] # 3d point in real world space
 imgpointsCam2 = [] # 2d points in image plane.
 
-while True:
-    inp = input("enter to take photo s to stop")
-    if inp == "s":
-        break
+if use_camera_input:
+    while True:
+        inp = input("enter to take photo s to stop")
+        if inp == "s":
+            break
 
-    img = cap.read()
-    im1, im2 = ImagePreprocessor.get_camera_images(img)
+        img = cap.read()
+        im1, im2 = ImagePreprocessor.get_camera_images(img)
+        print("image captured")
 
-    if add_image(im1, objpointsCam1, imgpointsCam1):
-        cam1_num += 1
-        print("works with cam1. " + str(cam1_num) + " images captured")
-        cv.imwrite(cam1_output_dir+"img"+str(cam1_num)+".jpg", im1)
+        if add_image(im1, objpointsCam1, imgpointsCam1):
+            cam1_num += 1
+            print("works with cam1. " + str(cam1_num) + " images captured")
+            cv.imwrite(cam1_output_dir+"img"+str(cam1_num)+".jpg", im1)
 
-    if add_image(im2, objpointsCam2, imgpointsCam2):
-        cam2_num += 1
-        print("works with cam2. ")
-        cv.imwrite(cam1_output_dir+"img"+str(cam2_num)+".jpg", im2)
+        if add_image(im2, objpointsCam2, imgpointsCam2):
+            cam2_num += 1
+            print("works with cam2. ")
+            cv.imwrite(cam1_output_dir+"img"+str(cam2_num)+".jpg", im2)
 
+else:
+    import glob
+
+    print("processing cam 1")
+    os.chdir(cam1_output_dir)
+    images = glob.glob('*.jpg')
+    for counter, f in enumerate(images):
+        im = cv.imread(f)
+        print("image " + str(counter) + " " + str(add_image(im, objpointsCam1, imgpointsCam1)))
+    print("done")
+
+    print("processing cam 2")
+    os.chdir(cam2_output_dir)
+    images = glob.glob('*.jpg')
+    for counter, f in enumerate(images):
+        im = cv.imread(f)
+        print("image " + str(counter) + " " + str(add_image(im, objpointsCam2, imgpointsCam2)))
+    print("done")
 
 ret1, mtx1, dist1, rvecs1, tvecs1 = cv.calibrateCamera\
     (objpointsCam1, imgpointsCam1, ImagePreprocessor.get_cam_res(), None, None)
