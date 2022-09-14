@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 
 # points which define crop to isolate image from background
-im_top_left = []
-im_bottom_right = []
+im_top_left = [240, 0]  # x, y
+im_bottom_right = [1680, 1080]
 
 im1_crop = np.array([[1550, 1005], [2900, 994], [1400, 2430], [3100, 2450]])
 im2_crop = np.array([[837, 580], [3500, 630], [3200, 2850], [1100, 2800]])
@@ -26,8 +26,10 @@ class ImagePreprocessor:
     def get_camera_images(img):
         """from hdmi input isolate camera images"""
         # crop out cli background
-        #cropped_im = img[im_top_left[1]:im_bottom_right[1], im_top_left[0]:im_bottom_right[0]]
-        cropped_im = img
+        cropped_im = img[im_top_left[1]:im_bottom_right[1], im_top_left[0]:im_bottom_right[0]]
+        cv2.imshow("crop", cropped_im)
+        cv2.waitKey(0)
+        # cropped_im = img
 
         # divide 2 image and stretch along horizontal axis
         height, width, channels = cropped_im.shape
@@ -108,6 +110,7 @@ if __name__ == '__main__':
     # get first frame from video
     cap = cv2.VideoCapture('/Users/andylegrand/PycharmProjects/objloc_ras_pi/test.mp4')
 
+    """
     # cycle 1 second
     for i in range(30): cap.read()
 
@@ -118,4 +121,8 @@ if __name__ == '__main__':
     cv2.imwrite("/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/object1.jpg", im1)
     cv2.imwrite("/Users/andylegrand/PycharmProjects/objloc_ras_pi/output/object2.jpg", im2)
     print("done")
+    """
+
+    crop = image_pre.get_camera_images(cv2.imread("/Users/andylegrand/PycharmProjects/objloc_ras_pi/test_images/testframe0.jpg"))
+    cv2.imshow("test", crop)
 
