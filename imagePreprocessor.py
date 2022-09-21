@@ -27,8 +27,6 @@ class ImagePreprocessor:
         """from hdmi input isolate camera images"""
         # crop out cli background
         cropped_im = img[im_top_left[1]:im_bottom_right[1], im_top_left[0]:im_bottom_right[0]]
-        cv2.imshow("crop", cropped_im)
-        cv2.waitKey(0)
         # cropped_im = img
 
         # divide 2 image and stretch along horizontal axis
