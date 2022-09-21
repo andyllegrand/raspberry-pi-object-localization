@@ -26,8 +26,8 @@ class ImagePreprocessor:
     def get_camera_images(img):
         """from hdmi input isolate camera images"""
         # crop out cli background
-        cropped_im = img[im_top_left[1]:im_bottom_right[1], im_top_left[0]:im_bottom_right[0]]
-        # cropped_im = img
+        # cropped_im = img[im_top_left[1]:im_bottom_right[1], im_top_left[0]:im_bottom_right[0]] # uncomment for
+        cropped_im = img
 
         # divide 2 image and stretch along horizontal axis
         height, width, channels = cropped_im.shape
@@ -121,6 +121,8 @@ if __name__ == '__main__':
     print("done")
     """
 
+    """
     crop = image_pre.get_camera_images(cv2.imread("/Users/andylegrand/PycharmProjects/objloc_ras_pi/test_images/testframe0.jpg"))
     cv2.imshow("test", crop)
+    """
 
